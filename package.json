@@ -1,0 +1,35 @@
+{
+  "name": "pursestrings",
+  "version": "0.1.0",
+  "description": "A shopping and payments agent bounded by a Kite Agent Passport session and explained by SERV Reasoning.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "pursestrings": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "dev": "tsx src/cli.ts",
+    "doctor": "tsx src/cli.ts doctor"
+  },
+  "dependencies": {
+    "openai": "^7.53.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

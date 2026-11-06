@@ -7,3 +7,6 @@ target/
 *.log
 .DS_Store
 neardev/
+.pursestrings/
+.kite-passport/
+!.env.example
