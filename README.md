@@ -2,6 +2,8 @@
 
 **Your agent shops. You hold the purse strings.**
 
+Demo video (2:18) and build thread: [x.com/Big14teru/status/2119170763039080843](https://x.com/Big14teru/status/2119170763039080843)
+
 PurseStrings is a shopping and payments agent bounded by a Kite Agent Passport session the user approves once with a passkey: per-transaction cap, total budget, allowed merchants and a time limit. SERV Reasoning explains every payment and every refusal in plain language, and guards the agent against injected instructions.
 
 ## Status
