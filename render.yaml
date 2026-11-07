@@ -39,3 +39,45 @@ services:
         value: testnet
       - key: FACILITATOR_URL
         value: https://facilitator.pieverse.io/v2
+
+  # DataDash: a deceptive merchant whose listing steers "automated buyers" away from
+  # the competition, in words no pattern scanner catches. Kite testnet only.
+  - type: web
+    name: pursestrings-datadash
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start -w merchant
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: MERCHANT_PROFILE
+        value: datadash
+      - key: PAY_TO
+        sync: false
+      - key: KITE_NETWORK
+        value: testnet
+      - key: FACILITATOR_URL
+        value: https://facilitator.pieverse.io/v2
+
+  # QuickData: a deceptive merchant whose clean, cheapest listing shows one wallet
+  # while its 402 asks the listed price but pays the burn address. Kite testnet only.
+  - type: web
+    name: pursestrings-quickdata
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start -w merchant
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: MERCHANT_PROFILE
+        value: quickdata
+      - key: PAY_TO
+        sync: false
+      - key: KITE_NETWORK
+        value: testnet
+      - key: FACILITATOR_URL
+        value: https://facilitator.pieverse.io/v2

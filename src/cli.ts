@@ -19,10 +19,20 @@ import { createServClient } from "./serv/client.js";
 
 export const DEFAULT_MERCHANT = "https://pursestrings-merchant.onrender.com";
 
+/** The honest marketplace plus the three deceptive fixtures, all live on Kite testnet. */
+export const DEMO_MERCHANTS = [
+  DEFAULT_MERCHANT,
+  "https://pursestrings-megadeals.onrender.com",
+  "https://pursestrings-datadash.onrender.com",
+  "https://pursestrings-quickdata.onrender.com",
+];
+export const DEMO_TASK = "Buy the cheapest 1GB data bundle under $0.50 for +2348012345678 and book a ride from Yaba to Victoria Island";
+
 const HELP = `pursestrings: your agent shops, you hold the purse strings.
 
 Usage:
   pursestrings run "<task>" [--budget 1.00] [--merchant <url>]... [--yes] [--red-team]
+  pursestrings run --demo
   pursestrings ledger [<run id> | last | verify] [--json]
   pursestrings doctor [--offline] [--probe-serv] [--json]
   pursestrings --version
@@ -44,6 +54,9 @@ Options for run:
   --merchant <url>  Merchant to shop from; repeat for several
                     (default ${DEFAULT_MERCHANT}, or PURSESTRINGS_MERCHANTS)
   --yes             Accept the spending limits without asking
+  --demo            The full demo: the honest marketplace and the three deceptive
+                    merchants on Render, the red team on, and a sample task.
+                    The first request wakes each free-plan host (up to a minute).
   --red-team        After approval, act as if a quarantined merchant's injected
                     instructions had worked: ask Passport to pay its demand with
                     PurseStrings' own checks off, to show what the session alone
@@ -92,6 +105,7 @@ async function main(argv: string[]): Promise<number> {
       merchant: { type: "string", multiple: true },
       yes: { type: "boolean", short: "y" },
       "red-team": { type: "boolean" },
+      demo: { type: "boolean" },
     },
   });
 
@@ -115,14 +129,15 @@ async function main(argv: string[]): Promise<number> {
       return report.checks.some((c) => c.state === "fail") ? 1 : 0;
     }
     case "run": {
-      const task = positionals.slice(1).join(" ").trim();
+      const task = positionals.slice(1).join(" ").trim() || (values.demo ? DEMO_TASK : "");
       if (!task) {
         console.error('Give the task in quotes, e.g. pursestrings run "cheapest 1GB data bundle under $0.50 for +2348012345678"');
         return 1;
       }
       const budgetUsd = values.budget ?? "1.00";
       toMicros(budgetUsd);
-      const merchants = values.merchant?.length ? values.merchant : (process.env.PURSESTRINGS_MERCHANTS?.split(",").map((m) => m.trim()).filter(Boolean) ?? [DEFAULT_MERCHANT]);
+      const merchants = values.merchant?.length ? values.merchant : values.demo ? DEMO_MERCHANTS : (process.env.PURSESTRINGS_MERCHANTS?.split(",").map((m) => m.trim()).filter(Boolean) ?? [DEFAULT_MERCHANT]);
+      if (values.demo) console.log(`Demo: ${merchants.length} merchants on Render (free plan: the first request may take up to a minute each). Task: ${task}`);
       const ledger = new Ledger(join(config.stateDir, "ledger.jsonl"));
       const passport = createPassport(config, { preflight: createMerchantPreflight() });
       const backend = passport.mode === "live" && config.kpass.baseURL ? ` (${config.kpass.baseURL})` : passport.mode === "sim" ? " (simulator, no funds move)" : "";
@@ -135,7 +150,7 @@ async function main(argv: string[]): Promise<number> {
           merchants,
           confirm: values.yes ? async () => true : ask,
           onEvent: (event) => console.log(renderEvent(event)),
-          redTeam: values["red-team"],
+          redTeam: values["red-team"] || values.demo,
         },
       );
       if (values["red-team"] && !summary.redTeam && summary.sessionId) console.log("Red team: no quarantined merchant to test against; add one with --merchant.");
