@@ -2,7 +2,9 @@
 
 **Your agent shops. You hold the purse strings.**
 
-Demo video (2:18) and build thread: [x.com/Big14teru/status/2119170763039080843](https://x.com/Big14teru/status/2119170763039080843)
+**Try it in your browser: [pursestrings-demo.onrender.com](https://pursestrings-demo.onrender.com)**. Run the agent against the honest merchant and the three traps, approve its limits yourself, and read the hash-chained ledger. Or replay a run recorded with SERV live.
+
+Demo video and build thread: [x.com/Big14teru/status/2119170763039080843](https://x.com/Big14teru/status/2119170763039080843)
 
 PurseStrings is a shopping and payments agent bounded by a Kite Agent Passport session the user approves once with a passkey: per-transaction cap, total budget, allowed merchants and a time limit. SERV Reasoning plans each purchase, screens merchant listings for manipulation, and explains every payment and every refusal in plain language. PurseStrings checks every payment request against the merchant's listing in code, so a payment that Passport's limits would allow still fails if it goes to the wrong wallet.
 
@@ -163,6 +165,14 @@ Both payments were made with `merchant/scripts/buy.ts` (an x402 client paying fr
 
 - **0.5% on policy-enforced spend:** a rail fee on payments that settle inside the limits the user approved. Each run's ledger records the fee it would earn; nothing is charged on testnet.
 - **Merchant listings:** a fee for merchants that want PurseStrings agents to find them.
+
+## The demo page
+
+`merchant/src/demo/` is the hosted demo at [pursestrings-demo.onrender.com](https://pursestrings-demo.onrender.com). It runs the agent against in-process copies of the four demo merchants (simulated facilitator, no listening ports), with the Kite Passport simulator and SERV in mock mode, so a visitor's run costs nothing and moves nothing. The visitor approves or declines the spending limits, as they would with a passkey; events stream to the page as they happen. Every run goes to one hash-chained ledger the page verifies. "Replay a live SERV run" plays back a real run of the same demo recorded with SERV live (Kronos planner, the guard blocking DataDash), with its SERV request ids.
+
+```bash
+npm run demo        # http://localhost:8410 (DEMO_SERV_MODE=live uses your SERV key)
+```
 
 ## Development
 
