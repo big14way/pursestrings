@@ -181,6 +181,11 @@ async function loadRecorded() {
 const feed = $("#feed");
 let current = null;
 
+/** Follow the feed while the visitor is watching the demo section. */
+function follow(el) {
+  const demo = $("#demo").getBoundingClientRect();
+  if (demo.top < window.innerHeight && demo.bottom > 0) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 function add(html, cls = "") {
   feed.querySelector(".empty")?.remove();
   feed.querySelector(".pending")?.remove();
@@ -188,6 +193,7 @@ function add(html, cls = "") {
   el.className = `item ${cls}`;
   el.innerHTML = html;
   feed.append(el);
+  follow(el);
   return el;
 }
 function pending(text) {
@@ -196,6 +202,24 @@ function pending(text) {
   el.className = "pending";
   el.innerHTML = `<span class="spinner"></span>${esc(text)}`;
   feed.append(el);
+  follow(el);
+}
+
+/**
+ * The sandbox answers in milliseconds; show the steps one at a time so they can be
+ * read, a little longer on the ones that matter.
+ */
+let queue = Promise.resolve();
+const pace = (msg) => {
+  const t = msg.type === "event" ? msg.event.type : msg.type;
+  return { quarantine: 1100, plan: 1200, step: 1000, redteam: 1100, fallback: 900, catalog: 600, identity: 500, done: 600 }[t] ?? 250;
+};
+function enqueue(msg, recorded = false) {
+  queue = queue.then(async () => {
+    await new Promise((r) => setTimeout(r, pace(msg)));
+    render(msg, recorded);
+  });
+  return queue;
 }
 
 function render(msg, recorded = false) {
@@ -345,7 +369,7 @@ async function startRun() {
   const source = new EventSource(`/api/runs/${body.id}/events`);
   source.onmessage = (m) => {
     const msg = JSON.parse(m.data);
-    render(msg);
+    enqueue(msg);
     if (msg.type === "done" || msg.type === "error") source.close();
   };
   source.onerror = () => { source.close(); };
@@ -362,10 +386,8 @@ async function replay() {
   feed.innerHTML = "";
   add(`<div class="eyebrow">Recorded run · SERV live</div><div class="sub" style="margin-top:6px">${esc(note)}</div>`, "accent");
   for (const msg of messages) {
-    const e = msg.event;
-    const slow = msg.type === "confirm" || e?.type === "quarantine" || e?.type === "step" || e?.type === "plan";
-    await new Promise((r) => setTimeout(r, slow ? 1100 : 450));
-    render(msg, true);
+    await enqueue(msg, true);
+    if (msg.type === "confirm") await new Promise((r) => setTimeout(r, 1200));
   }
   $("#run").disabled = false;
 }
