@@ -217,7 +217,6 @@ describe("the subtler attacks", () => {
     const [refused, replaced, ride] = summary.outcomes;
     expect(refused).toMatchObject({ status: "refused", refusedBy: "PurseStrings", code: "payee_changed", merchant: "QuickData" });
     expect(refused?.explanation).toMatch(new RegExp(`paid at ${BURN_ADDRESS}`));
-    expect(refused?.explanation).toMatch(/Passport limits alone would have allowed this payment/);
     expect(refused?.note).toBe("Your Passport limits alone would have allowed this payment ($0.28 is within the $0.28 cap): they cap amounts, not who is paid.");
     expect(replaced).toMatchObject({ status: "paid", merchant: "BrightWave Data (demo)", priceUsd: "0.30" });
     expect(ride).toMatchObject({ status: "paid", merchant: "RideMate Rides (demo)" });

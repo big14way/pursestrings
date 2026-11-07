@@ -408,8 +408,7 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
       const caps = session.plan;
       const withinCaps = asked !== undefined && asked <= toMicros(caps.perTxCapUsd) && session.spent + asked <= toMicros(caps.totalUsd);
       const note = withinCaps ? `Your Passport limits alone would have allowed this payment ($${usd(challenge?.priceUsd)} is within the $${caps.perTxCapUsd} cap): they cap amounts, not who is paid.` : undefined;
-      const detail = note ? `${challengeDecision.detail}; your Passport limits alone would have allowed this payment, because they cap amounts, not who is paid` : challengeDecision.detail;
-      return refuse("PurseStrings", challengeDecision.code, detail, undefined, note);
+      return refuse("PurseStrings", challengeDecision.code, challengeDecision.detail, undefined, note);
     }
     const req = stepRequest(step);
     const headers = req.body ? { "content-type": "application/json" } : undefined;
