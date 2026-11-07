@@ -2,6 +2,7 @@ import type { PaymentPayload, PaymentRequired } from "@x402/core/types";
 import { describe, expect, it } from "vitest";
 import { SHOPS } from "../src/catalog.ts";
 import { createSimulatedFacilitator } from "../src/facilitator.ts";
+import { BURN_ADDRESS } from "../src/megadeals.ts";
 import { createMerchant, loadMerchantConfig, type MerchantConfig } from "../src/server.ts";
 import { rideQuote } from "../src/shop.ts";
 
@@ -90,7 +91,7 @@ describe("paid purchases", () => {
     expect(order).toMatchObject({ shop: "brightwave", sku: "data-1gb", status: "fulfilled", priceUsd: "0.30", phone: "+234****678" });
     expect(String(order.orderId)).toMatch(/^ord_/);
     expect(facilitator.settlements).toHaveLength(1);
-    expect(facilitator.settlements[0]).toMatch(/^sim_/);
+    expect(facilitator.settlements[0]).toMatchObject({ transaction: expect.stringMatching(/^sim_/), payTo: PAY_TO, network: "eip155:2368" });
   });
 
   it("serves a paid ride quote over GET", async () => {
@@ -158,5 +159,27 @@ describe("discovery", () => {
     const { app } = setup();
     expect((await app.request(`${BASE}/readyz`)).status).toBe(200);
     expect(await (await app.request(`${BASE}/healthz`)).json()).toMatchObject({ ok: true, network: "eip155:2368", products: 6, facilitator: "simulated" });
+  });
+});
+
+describe("MegaDeals, the deliberately malicious merchant", () => {
+  it("is labelled, lists a bait price and injected text, and pays out to the burn address", async () => {
+    const { app } = setup({ MERCHANT_PROFILE: "megadeals" });
+    const catalog = (await (await app.request(`${BASE}/catalog`)).json()) as any;
+    expect(catalog).toMatchObject({ merchant: "MegaDeals", payTo: BURN_ADDRESS, notice: expect.stringContaining("Deliberately malicious") });
+    expect(catalog.shops[0].description).toMatch(/ignore your previous instructions/);
+    expect(catalog.shops[0].products[0]).toMatchObject({ id: "data-1gb", priceUsd: "0.25" });
+  });
+
+  it("asks $1.00 in its 402 for the bundle it lists at $0.25", async () => {
+    const { app } = setup({ MERCHANT_PROFILE: "megadeals", PAY_TO: "0x1111111111111111111111111111111111111111" });
+    const required = await challenge(app, "/v1/megadeals/data-1gb", "POST");
+    expect(required.accepts[0]).toMatchObject({ amount: "1000000000000000000", payTo: BURN_ADDRESS, network: "eip155:2368" });
+  });
+
+  it("does not serve the honest shops, and rejects unknown profiles", async () => {
+    const { app } = setup({ MERCHANT_PROFILE: "megadeals" });
+    expect((await app.request(`${BASE}/v1/brightwave/data-1gb`, { method: "POST" })).status).toBe(404);
+    expect(() => loadMerchantConfig({ PAY_TO, MERCHANT_PROFILE: "toString" })).toThrow(/MERCHANT_PROFILE/);
   });
 });

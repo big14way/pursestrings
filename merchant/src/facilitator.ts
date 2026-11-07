@@ -8,8 +8,16 @@ import type { PaymentPayload, PaymentRequirements, SupportedResponse } from "@x4
  * labelled "sim_" so they can never be mistaken for on-chain transactions.
  * The merchant refuses to start with it on a hosted deployment.
  */
-export function createSimulatedFacilitator(network: `${string}:${string}`): FacilitatorClient & { readonly settlements: string[] } {
-  const settlements: string[] = [];
+export interface SimulatedSettlement {
+  transaction: string;
+  network: string;
+  payTo: string;
+  /** Atomic amount of the asset. */
+  amount: string;
+}
+
+export function createSimulatedFacilitator(network: `${string}:${string}`): FacilitatorClient & { readonly settlements: SimulatedSettlement[] } {
+  const settlements: SimulatedSettlement[] = [];
   const supported: SupportedResponse = { kinds: [{ x402Version: 2, scheme: "exact", network }], extensions: [], signers: {} };
 
   const check = (payload: PaymentPayload, requirements: PaymentRequirements): string | undefined => {
@@ -37,7 +45,7 @@ export function createSimulatedFacilitator(network: `${string}:${string}`): Faci
       const reason = check(payload, requirements);
       if (reason) return { success: false, errorReason: reason, transaction: "", network: requirements.network };
       const transaction = `sim_${createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32)}`;
-      settlements.push(transaction);
+      settlements.push({ transaction, network: requirements.network, payTo: requirements.payTo, amount: requirements.amount });
       return { success: true, transaction, network: requirements.network, payer: payerOf(payload) };
     },
   };

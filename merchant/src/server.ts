@@ -1,13 +1,18 @@
 import { HTTPFacilitatorClient, type FacilitatorClient } from "@x402/core/server";
 import { Hono } from "hono";
 import { createApp, KITE_NETWORKS, loadConfig as loadWrapperConfig } from "kite-x402-hono";
-import { paidPath, SHOPS, type Shop, type Sku } from "./catalog.ts";
+import { chargeOf, MARKETPLACE, paidPath, type Profile, type Shop, type Sku } from "./catalog.ts";
 import { createSimulatedFacilitator } from "./facilitator.ts";
+import { MEGADEALS } from "./megadeals.ts";
 import { createShopBackend } from "./shop.ts";
 
 export const PIEVERSE_FACILITATOR = "https://facilitator.pieverse.io/v2";
 
+export const PROFILES: Record<string, Profile> = { marketplace: MARKETPLACE, megadeals: MEGADEALS };
+
 export interface MerchantConfig {
+  /** Which merchant this host is: the honest marketplace or the malicious test fixture. */
+  profile: Profile;
   payTo: string;
   network: "testnet" | "mainnet";
   facilitatorUrl: string;
@@ -24,7 +29,10 @@ type Env = Record<string, string | undefined>;
 const PASSTHROUGH = ["LOG_ENABLED", "LOG_FORMAT", "TRUST_PROXY_HEADERS", "TRUSTED_PROXY_CIDRS", "RATE_LIMIT_RPS", "RATE_LIMIT_BURST", "FACILITATOR_TIMEOUT_MS", "MAX_CONCURRENT_REQUESTS"];
 
 export function loadMerchantConfig(env: Env = process.env): MerchantConfig {
-  const payTo = (env.PAY_TO ?? env.MERCHANT_PAY_TO ?? "").trim();
+  const profileId = env.MERCHANT_PROFILE?.trim() || "marketplace";
+  const profile = Object.hasOwn(PROFILES, profileId) ? PROFILES[profileId] : undefined;
+  if (!profile) throw new Error(`MERCHANT_PROFILE must be one of ${Object.keys(PROFILES).join(", ")}`);
+  const payTo = (profile.payTo ?? env.PAY_TO ?? env.MERCHANT_PAY_TO ?? "").trim();
   if (!/^0x[\da-fA-F]{40}$/.test(payTo) || /^0x0{40}$/i.test(payTo)) throw new Error("PAY_TO must be a nonzero EVM address (the merchant's receiving wallet)");
   const network = (env.KITE_NETWORK?.trim() || "testnet") as MerchantConfig["network"];
   if (network !== "testnet" && network !== "mainnet") throw new Error("KITE_NETWORK must be testnet or mainnet");
@@ -37,7 +45,7 @@ export function loadMerchantConfig(env: Env = process.env): MerchantConfig {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error("PORT must be a valid port number");
   const publicUrl = (env.PUBLIC_URL ?? env.RENDER_EXTERNAL_URL)?.trim().replace(/\/+$/, "") || undefined;
   const passthrough = Object.fromEntries(PASSTHROUGH.flatMap((k) => (env[k] ? [[k, env[k] as string]] : [])));
-  return { payTo, network, facilitatorUrl: env.FACILITATOR_URL?.trim() || PIEVERSE_FACILITATOR, facilitatorMode, port, publicUrl, passthrough };
+  return { profile, payTo, network, facilitatorUrl: env.FACILITATOR_URL?.trim() || PIEVERSE_FACILITATOR, facilitatorMode, port, publicUrl, passthrough };
 }
 
 export interface MerchantOptions {
@@ -56,7 +64,8 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
   const chain = KITE_NETWORKS[config.network];
   const simulated = config.facilitatorMode === "simulated";
   const facilitator = options.facilitator ?? (simulated ? createSimulatedFacilitator(chain.network) : new HTTPFacilitatorClient({ url: config.facilitatorUrl }));
-  const backend = options.backend ?? createShopBackend();
+  const { profile } = config;
+  const backend = options.backend ?? createShopBackend({ shops: profile.shops });
 
   // The wrapper strips /v1 and calls this with /<shop>/<sku>; serve it in-process.
   const fetchUpstream = async (request: Request): Promise<Response> => {
@@ -72,7 +81,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
   };
 
   const listings = new Map<string, Listing>();
-  for (const shop of SHOPS) {
+  for (const shop of profile.shops) {
     for (const sku of shop.skus) {
       const wrapperConfig = {
         ...loadWrapperConfig({
@@ -80,7 +89,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
           // Required by the wrapper but unused: fetchUpstream serves the shop in-process.
           UPSTREAM_URL: "http://127.0.0.1:9",
           KITE_NETWORK: config.network,
-          PRICE_USD: sku.priceUsd,
+          PRICE_USD: chargeOf(sku),
           FACILITATOR_URL: config.facilitatorUrl,
           ...config.passthrough,
         }),
@@ -94,7 +103,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
   const origin = (requestUrl: string) => config.publicUrl ?? new URL(requestUrl).origin;
   const app = new Hono();
 
-  app.get("/healthz", (c) => c.json({ ok: true, network: chain.network, asset: chain.symbol, facilitator: simulated ? "simulated" : config.facilitatorUrl, products: listings.size }));
+  app.get("/healthz", (c) => c.json({ ok: true, profile: profile.id, network: chain.network, asset: chain.symbol, facilitator: simulated ? "simulated" : config.facilitatorUrl, products: listings.size }));
 
   // Readiness: the facilitator offers exact payments on our network.
   app.get("/readyz", (c) => {
@@ -105,12 +114,13 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
   app.get("/catalog", (c) => {
     const base = origin(c.req.url);
     return c.json({
-      merchant: "PurseStrings demo merchants",
+      merchant: profile.merchant,
+      ...(profile.notice ? { notice: profile.notice } : {}),
       network: chain.network,
       asset: { address: chain.asset, symbol: chain.symbol, decimals: chain.decimals },
       payTo: config.payTo,
       facilitator: simulated ? "simulated (local only, no funds move)" : config.facilitatorUrl,
-      shops: SHOPS.map((shop) => ({
+      shops: profile.shops.map((shop) => ({
         id: shop.id,
         name: shop.name,
         category: shop.category,
@@ -128,7 +138,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
         url: `${base}${path}`,
         method: sku.method,
         description: `${shop.name}: ${sku.title}`,
-        accepts: [{ scheme: "exact", network: chain.network, asset: chain.asset, priceUsd: sku.priceUsd, payTo: config.payTo }],
+        accepts: [{ scheme: "exact", network: chain.network, asset: chain.asset, priceUsd: chargeOf(sku), payTo: config.payTo }],
       })),
     });
   });

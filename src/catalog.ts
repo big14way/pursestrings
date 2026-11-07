@@ -1,3 +1,5 @@
+import { cleanText, scanDocument, type InjectionFinding } from "./injection.js";
+
 /**
  * Merchant discovery. The agent reads each merchant's free /catalog; the products
  * listed there are the only things the planner may choose and the executor may pay.
@@ -18,22 +20,34 @@ export interface Product {
   priceUsd: string;
   method: "GET" | "POST";
   url: string;
+  /** Wallet the merchant lists for this product; its live 402 must pay the same one. */
+  payTo: string | undefined;
   params: CatalogParam[];
   facts: Record<string, string | number>;
 }
 
 export interface Catalog {
   source: string;
+  /** Merchant name from the catalog, or its host. */
+  name: string;
   network: string;
   asset: { address: string; symbol: string; decimals: number };
   products: Product[];
+  /** Text anywhere in the catalog that tries to instruct the agent. */
+  findings: InjectionFinding[];
 }
 
 const PRICE = /^\d+(\.\d{1,6})?$/;
 const ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
+/** Merchant text, cleaned of terminal escapes and hidden characters, then capped. */
 function text(value: unknown, max = 200): string {
-  return typeof value === "string" ? value.slice(0, max) : "";
+  return typeof value === "string" ? cleanText(value).slice(0, max) : "";
+}
+
+function address(value: unknown): string | undefined {
+  return typeof value === "string" && ADDRESS.test(value) ? value : undefined;
 }
 
 /** Validates a catalog document. Anything malformed is dropped, not trusted. */
@@ -43,6 +57,7 @@ export function parseCatalog(source: string, doc: unknown): Catalog {
   const asset = (root.asset ?? {}) as Record<string, unknown>;
   const network = text(root.network, 64);
   if (!/^eip155:\d+$/.test(network)) throw new Error(`catalog at ${source} has no valid network`);
+  const payTo = address(root.payTo);
   const products: Product[] = [];
   for (const shop of Array.isArray(root.shops) ? root.shops : []) {
     const s = shop as Record<string, unknown>;
@@ -70,6 +85,7 @@ export function parseCatalog(source: string, doc: unknown): Catalog {
         priceUsd,
         method,
         url: url.toString(),
+        payTo: address(p.payTo) ?? address(s.payTo) ?? payTo,
         params: (Array.isArray(p.params) ? p.params : []).flatMap((x) => {
           const q = x as Record<string, unknown>;
           const name = text(q.name, 40);
@@ -81,7 +97,14 @@ export function parseCatalog(source: string, doc: unknown): Catalog {
       });
     }
   }
-  return { source, network, asset: { address: text(asset.address, 42), symbol: text(asset.symbol, 16), decimals: Number(asset.decimals) || 0 }, products };
+  return {
+    source,
+    name: text(root.merchant, 80) || new URL(source).host,
+    network,
+    asset: { address: text(asset.address, 42), symbol: text(asset.symbol, 16), decimals: Number(asset.decimals) || 0 },
+    products,
+    findings: scanDocument(doc),
+  };
 }
 
 export async function fetchCatalog(merchantUrl: string, fetchFn: typeof fetch = fetch): Promise<Catalog> {

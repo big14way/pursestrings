@@ -140,6 +140,14 @@ describe("policy", () => {
     expect(checkChallenge(step, undefined, catalog)).toMatchObject({ code: "no_payment_challenge" });
   });
 
+  it("refuses a 402 that pays a different wallet than the merchant listed", () => {
+    const listed = "0x706F739AE390375A1Df4046879a47DC2D46389cc";
+    const step = { ...plan.steps[0]!, product: { ...plan.steps[0]!.product, payTo: listed } };
+    const ok: Challenge = { x402Version: 2, scheme: "exact", network: "eip155:2368", asset: PIEUSD, amountAtomic: "300000000000000000", payTo: listed.toLowerCase(), priceUsd: "0.3", resourceUrl: undefined, description: undefined };
+    expect(checkChallenge(step, ok, catalog)).toEqual({ ok: true });
+    expect(checkChallenge(step, { ...ok, payTo: "0x000000000000000000000000000000000000dEaD" }, catalog)).toMatchObject({ code: "payee_changed", detail: expect.stringContaining("0x000000000000000000000000000000000000dEaD") });
+  });
+
   it("puts GET inputs in the query and POST inputs in the body", () => {
     expect(stepRequest(plan.steps[1]!)).toEqual({ url: `${M}/v1/ridemate/quote?from=Yaba&to=Ikeja`, method: "GET" });
     expect(stepRequest(plan.steps[0]!)).toEqual({ url: `${M}/v1/brightwave/data-1gb`, method: "POST", body: { phone: "+2348012345678" } });

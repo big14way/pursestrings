@@ -35,6 +35,11 @@ export interface SimOptions {
   /** Network reported when a merchant does not advertise one. */
   defaultNetwork?: string;
   walletBalance?: string;
+  /**
+   * Refuse calls outside the session's allowed_endpoints. Off by default, like live
+   * Passport, which records the endpoint scope but does not enforce it on paid calls.
+   */
+  enforceEndpointScope?: boolean;
   transcript?: Transcript;
   now?: () => number;
 }
@@ -231,7 +236,7 @@ export class SimKpass implements KpassRunner {
       return [EXIT.usage, { _version: "1", status: "error", error: `invalid --url ${rawUrl}`, error_code: "invalid_url" }];
     }
     const scope = session.delegation.execution_constraints?.x402;
-    if (scope?.scope_mode === "scoped" && !scope.allowed_endpoints.some((e) => endpointMatches(e, method, url))) {
+    if (this.options.enforceEndpointScope && scope?.scope_mode === "scoped" && !scope.allowed_endpoints.some((e) => endpointMatches(e, method, url))) {
       return [EXIT.policy, { _version: "1", status: "error", error: `${method} ${url.host}${url.pathname} is not in the session's allowed endpoints.`, error_code: "session_endpoint_forbidden" }];
     }
 

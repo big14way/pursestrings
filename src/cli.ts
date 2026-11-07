@@ -10,6 +10,7 @@ import { mockExplainResponder } from "./explain.js";
 import { createMerchantPreflight } from "./kpass/merchant-preflight.js";
 import { createPassport } from "./kpass/passport.js";
 import { Ledger } from "./ledger.js";
+import { listRuns, renderRun, renderRunList } from "./ledger-view.js";
 import { toMicros } from "./money.js";
 import { mockPlanResponder } from "./planner.js";
 import { renderEvent, renderSummary } from "./render.js";
@@ -20,14 +21,18 @@ export const DEFAULT_MERCHANT = "https://pursestrings-merchant.onrender.com";
 const HELP = `pursestrings: your agent shops, you hold the purse strings.
 
 Usage:
-  pursestrings run "<task>" [--budget 1.00] [--merchant <url>]... [--yes]
+  pursestrings run "<task>" [--budget 1.00] [--merchant <url>]... [--yes] [--red-team]
+  pursestrings ledger [<run id> | last] [--json]
   pursestrings doctor [--offline] [--probe-serv] [--json]
   pursestrings --version
 
 Commands:
   run      Plan the task with SERV Reasoning, ask Kite Passport for a spending
            session bounded by the plan (you approve it with a passkey), then pay
-           each merchant, explaining every payment and refusal.
+           each merchant, explaining every payment and refusal. A merchant
+           whose listing tries to instruct the agent is quarantined.
+  ledger   The audit trail: recent runs, or one run in full (merchants, plan,
+           approved limits, payments with transaction links, refusals).
   doctor   Check SERV Reasoning, Kite Passport and the Kite testnet, and report
            what payments settle on.
 
@@ -36,6 +41,10 @@ Options for run:
   --merchant <url>  Merchant to shop from; repeat for several
                     (default ${DEFAULT_MERCHANT}, or PURSESTRINGS_MERCHANTS)
   --yes             Accept the spending limits without asking
+  --red-team        After approval, act as if a quarantined merchant's injected
+                    instructions had worked: ask Passport to pay its demand with
+                    PurseStrings' own checks off, to show what the session alone
+                    allows. Kite testnet merchants only.
 
 Options for doctor:
   --offline     Skip the Kite RPC and facilitator probes
@@ -79,6 +88,7 @@ async function main(argv: string[]): Promise<number> {
       budget: { type: "string" },
       merchant: { type: "string", multiple: true },
       yes: { type: "boolean", short: "y" },
+      "red-team": { type: "boolean" },
     },
   });
 
@@ -122,10 +132,30 @@ async function main(argv: string[]): Promise<number> {
           merchants,
           confirm: values.yes ? async () => true : ask,
           onEvent: (event) => console.log(renderEvent(event)),
+          redTeam: values["red-team"],
         },
       );
+      if (values["red-team"] && !summary.redTeam && summary.sessionId) console.log("Red team: no quarantined merchant to test against; add one with --merchant.");
       console.log(renderSummary(summary, ledger.path));
       return summary.outcomes.some((o) => o.status === "paid") || summary.stoppedReason === undefined ? 0 : 1;
+    }
+    case "ledger": {
+      const ledger = new Ledger(join(config.stateDir, "ledger.jsonl"));
+      const entries = await ledger.read();
+      const which = positionals[1];
+      if (!which) {
+        const runs = listRuns(entries);
+        console.log(values.json ? JSON.stringify(runs, null, 2) : renderRunList(runs));
+        return 0;
+      }
+      const runId = which === "last" ? listRuns(entries)[0]?.runId : which;
+      const run = entries.filter((e) => e.runId === runId);
+      if (run.length === 0) {
+        console.error(`No run ${which} in ${ledger.path}. List runs with: pursestrings ledger`);
+        return 1;
+      }
+      console.log(values.json ? JSON.stringify(run, null, 2) : renderRun(run));
+      return 0;
     }
     default:
       console.error(`Unknown command "${command}".\n\n${HELP}`);

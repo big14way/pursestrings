@@ -1,9 +1,9 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/** Append-only record of every decision: plan, session, payment, refusal. */
+/** Append-only record of every decision: merchants found, plan, session, payments and refusals. */
 
-export type LedgerKind = "plan" | "session" | "payment" | "refusal" | "run";
+export type LedgerKind = "discover" | "plan" | "session" | "redteam" | "payment" | "refusal" | "run";
 
 export interface LedgerEntry {
   runId: string;

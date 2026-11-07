@@ -70,7 +70,8 @@ export function plannerUserPrompt(task: string, budgetUsd: string, catalog: Cata
     inputs: p.params.map((x) => x.name),
     facts: p.facts,
   }));
-  return `<task>${task}</task>\n<budget_usd>${budgetUsd}</budget_usd>\n<catalog>${JSON.stringify(products)}</catalog>`;
+  // "<" is escaped so merchant text cannot close the <catalog> tag.
+  return `<task>${task}</task>\n<budget_usd>${budgetUsd}</budget_usd>\n<catalog>${JSON.stringify(products).replaceAll("<", "\\u003c")}</catalog>`;
 }
 
 /** Finds the plan object in a model reply, with or without a code fence. */

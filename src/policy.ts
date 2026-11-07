@@ -37,11 +37,14 @@ export function checkStep(plan: Plan, step: PlanStep, spentUsd: string, allowedO
   return { ok: true };
 }
 
-/** Does the merchant's live 402 ask for what the catalog promised? */
+/** Does the merchant's live 402 ask for what the catalog promised: network, token, payee and price? */
 export function checkChallenge(step: PlanStep, challenge: Challenge | undefined, catalog: Pick<Catalog, "network" | "asset">): Decision {
   if (!challenge) return { ok: false, code: "no_payment_challenge", detail: "the merchant did not answer with an x402 payment request" };
   if (challenge.network !== catalog.network) return { ok: false, code: "wrong_network", detail: `the merchant asked for payment on ${challenge.network}, not ${catalog.network}` };
   if (challenge.asset.toLowerCase() !== catalog.asset.address.toLowerCase()) return { ok: false, code: "wrong_asset", detail: `the merchant asked for an unexpected token ${challenge.asset}` };
+  if (step.product.payTo && challenge.payTo.toLowerCase() !== step.product.payTo.toLowerCase()) {
+    return { ok: false, code: "payee_changed", detail: `the merchant asks to be paid at ${challenge.payTo}, not at its listed wallet ${step.product.payTo}` };
+  }
   if (!challenge.priceUsd || !sameAmount(challenge.priceUsd, step.product.priceUsd)) {
     return { ok: false, code: "price_changed", detail: `the merchant now asks $${challenge.priceUsd ?? "?"} instead of the listed $${step.product.priceUsd}` };
   }

@@ -150,13 +150,20 @@ describe("simulator", () => {
     expect(again.usage?.spent_total).toBe("3.00");
   });
 
-  it("refuses over the per-transaction cap, over budget and outside scope", async () => {
-    const { passport } = await approvedSession();
+  it("refuses over the per-transaction cap, over budget and, when asked to, outside scope", async () => {
+    const { passport } = await approvedSession(new SimKpass({ preflight, enforceEndpointScope: true }));
     await expect(passport.execute({ url: "https://shop.test/v1/premium", method: "GET" })).rejects.toMatchObject({ code: "session_rule_exceeded", isPolicyRefusal: true });
     await passport.execute({ url: "https://shop.test/v1/bundle", method: "GET" });
     await expect(passport.execute({ url: "https://shop.test/v1/airtime", method: "GET" })).rejects.toMatchObject({ code: "session_total_exceeded" });
     await expect(passport.execute({ url: "https://evil.test/v1/bundle", method: "GET" })).rejects.toMatchObject({ code: "session_endpoint_forbidden" });
     await expect(passport.execute({ url: "https://shop.test/v1/bundle", method: "POST" })).rejects.toMatchObject({ code: "session_endpoint_forbidden" });
+  });
+
+  it("records but does not enforce the endpoint scope by default, like live Passport", async () => {
+    const { passport } = await approvedSession();
+    const paid = await passport.execute({ url: "https://elsewhere.test/v1/bundle", method: "GET" });
+    expect(paid.usage?.spent_total).toBe("3.00");
+    await expect(passport.execute({ url: "https://elsewhere.test/v1/premium", method: "GET" })).rejects.toMatchObject({ code: "session_rule_exceeded" });
   });
 
   it("refuses to pay without an approved session", async () => {

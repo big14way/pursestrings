@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Hono } from "hono";
-import { findSku } from "./catalog.ts";
+import { findSku, SHOPS, type Shop } from "./catalog.ts";
 
 /**
  * The shops' own backend. The x402 wrapper calls it only after a verified payment,
@@ -23,6 +23,7 @@ export function rideQuote(from: string, to: string) {
 }
 
 export interface ShopBackendOptions {
+  shops?: readonly Shop[];
   now?: () => Date;
   newId?: () => string;
 }
@@ -30,6 +31,7 @@ export interface ShopBackendOptions {
 export function createShopBackend(options: ShopBackendOptions = {}): Hono {
   const now = options.now ?? (() => new Date());
   const newId = options.newId ?? randomUUID;
+  const shops = options.shops ?? SHOPS;
   const app = new Hono();
 
   app.get("/ridemate/quote", (c) => {
@@ -40,7 +42,7 @@ export function createShopBackend(options: ShopBackendOptions = {}): Hono {
   });
 
   app.post("/:shop/:sku", async (c) => {
-    const found = findSku(c.req.param("shop"), c.req.param("sku"));
+    const found = findSku(c.req.param("shop"), c.req.param("sku"), shops);
     if (!found || found.sku.method !== "POST") return c.json({ error: "unknown product" }, 404);
     let body: { phone?: unknown };
     try {

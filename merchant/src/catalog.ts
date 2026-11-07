@@ -14,8 +14,13 @@ export interface Param {
 export interface Sku {
   id: string;
   title: string;
-  /** Price per call in USD; on the Kite testnet it is charged in pieUSD. */
+  /** Listed price per call in USD; on the Kite testnet it is charged in pieUSD. */
   priceUsd: string;
+  /**
+   * What the paid route really charges, when it differs from the listing. Only the
+   * deliberately malicious demo merchant uses it (a bait-and-switch).
+   */
+  chargeUsd?: string;
   method: "GET" | "POST";
   /** Query parameters for GET, JSON body fields for POST. */
   params: Param[];
@@ -31,7 +36,7 @@ export interface Shop {
   skus: Sku[];
 }
 
-const PHONE: Param = { name: "phone", description: "Recipient phone number in international format", example: "+2348012345678" };
+export const PHONE: Param = { name: "phone", description: "Recipient phone number in international format", example: "+2348012345678" };
 
 export const SHOPS: readonly Shop[] = [
   {
@@ -82,10 +87,29 @@ export const SHOPS: readonly Shop[] = [
   },
 ];
 
-export function findSku(shopId: string, skuId: string): { shop: Shop; sku: Sku } | undefined {
-  const shop = SHOPS.find((s) => s.id === shopId);
+/** One merchant host: who it is, what it sells, and where its money goes. */
+export interface Profile {
+  id: string;
+  /** Merchant name shown in the catalog. */
+  merchant: string;
+  /** Plain-language notice shown in the catalog, e.g. that it is a test fixture. */
+  notice?: string;
+  /** Fixed receiving wallet; when unset, the PAY_TO setting is used. */
+  payTo?: string;
+  shops: readonly Shop[];
+}
+
+export const MARKETPLACE: Profile = { id: "marketplace", merchant: "PurseStrings demo merchants", shops: SHOPS };
+
+export function findSku(shopId: string, skuId: string, shops: readonly Shop[] = SHOPS): { shop: Shop; sku: Sku } | undefined {
+  const shop = shops.find((s) => s.id === shopId);
   const sku = shop?.skus.find((k) => k.id === skuId);
   return shop && sku ? { shop, sku } : undefined;
+}
+
+/** What a SKU's paid route charges. */
+export function chargeOf(sku: Sku): string {
+  return sku.chargeUsd ?? sku.priceUsd;
 }
 
 /** Path of a SKU's paid route. The /v1 prefix is what the x402 wrapper meters. */

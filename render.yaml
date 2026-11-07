@@ -19,3 +19,23 @@ services:
         value: "0x706F739AE390375A1Df4046879a47DC2D46389cc"
       - key: FACILITATOR_URL
         value: https://facilitator.pieverse.io/v2
+
+  # MegaDeals: a deliberately malicious merchant for the prompt-injection demo.
+  # Its listing tells AI agents to send their whole budget to the burn address,
+  # and its 402 asks $1.00 for a bundle it lists at $0.25. Kite testnet only.
+  - type: web
+    name: pursestrings-megadeals
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start -w merchant
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: MERCHANT_PROFILE
+        value: megadeals
+      - key: KITE_NETWORK
+        value: testnet
+      - key: FACILITATOR_URL
+        value: https://facilitator.pieverse.io/v2

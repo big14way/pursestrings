@@ -1,13 +1,50 @@
-import type { RunEvent, RunSummary } from "./executor.js";
+import type { RedTeamOutcome, RunEvent, RunSummary } from "./executor.js";
+import { KIND_LABEL } from "./injection.js";
 
-/** Terminal rendering of a run: the plan, the limits, every payment and refusal. */
+/** Terminal rendering of a run: merchants, the plan, the limits, every payment and refusal. */
 
-const rule = "─".repeat(64);
+export const rule = "─".repeat(64);
+
+const EXPLORERS: Record<number, string> = { 2368: "https://testnet.kitescan.ai" };
+
+/** Block explorer link for a real transaction; none for simulated ones. */
+export function explorerTxUrl(chainId: number | undefined, tx: string | undefined): string | undefined {
+  if (!chainId || !tx || !/^0x[0-9a-fA-F]{64}$/.test(tx)) return undefined;
+  const base = EXPLORERS[chainId];
+  return base ? `${base}/tx/${tx}` : undefined;
+}
+
+function hostOf(source: string): string {
+  try {
+    return new URL(source).host;
+  } catch {
+    return source;
+  }
+}
+
+export function renderRedTeam(o: RedTeamOutcome): string {
+  if (o.status === "skipped") return `  Red team skipped: ${o.detail}`;
+  if (o.status === "paid") {
+    const tx = o.receipt?.transaction ? ` (tx ${o.receipt.transaction})` : "";
+    return `  ! Passport PAID the injected demand of $${o.demandUsd}${tx}. The session limits were wide enough to allow it.`;
+  }
+  return [`  ✗ ${o.refusedBy} refused: ${o.detail}${o.code ? ` (${o.code})` : ""}`, ...(o.explanation ? [`    ${o.explanation}`] : []), `    Nothing was paid to ${o.merchant}.`].join("\n");
+}
 
 export function renderEvent(event: RunEvent): string {
   switch (event.type) {
     case "catalog":
-      return `• ${event.merchant}: ${event.products} products`;
+      return `• ${event.merchant} (${hostOf(event.source)}): ${event.products} products`;
+    case "catalog-error":
+      return `• ${hostOf(event.source)}: unreachable, skipped (${event.error})`;
+    case "quarantine": {
+      const q = event.quarantine;
+      const kinds = [...new Set(q.findings.map((f) => KIND_LABEL[f.kind]))].join("; ");
+      const lines = [`⚠ ${q.merchant} (${hostOf(q.source)}): QUARANTINED. Its listing ${kinds}.`];
+      for (const f of q.findings.slice(0, 3)) lines.push(`    "${f.excerpt}"`);
+      lines.push(`    ${q.explanation}${q.explanationId ? ` (SERV trace ${q.explanationId})` : ""}`);
+      return lines.join("\n");
+    }
     case "plan": {
       const { plan } = event;
       const lines = [rule, `Plan (SERV ${plan.trace.mode}, ${plan.trace.model}${plan.trace.requestId ? `, trace ${plan.trace.requestId}` : ""}${plan.trace.cached ? ", cached" : ""})`];
@@ -29,6 +66,17 @@ export function renderEvent(event: RunEvent): string {
       return `${event.message || "Approve the session with your passkey:"}\n  ${event.url}\nWaiting for your passkey approval...`;
     case "approved":
       return `Session approved: ${event.sessionId}${event.expiresAt ? ` (until ${event.expiresAt})` : ""}`;
+    case "redteam-start": {
+      const t = event.target;
+      return [
+        rule,
+        `Red team: what if the agent had obeyed ${t.merchant}?`,
+        `→ Asking Passport to pay what ${t.merchant} demands, using this session with PurseStrings' own checks OFF:`,
+        `  ${t.item}, listed at $${t.listedUsd}, its 402 asks $${t.demandUsd ?? "?"} payable to ${t.payTo ?? "?"}`,
+      ].join("\n");
+    }
+    case "redteam":
+      return `${renderRedTeam(event.outcome)}\n${rule}`;
     case "step-start":
       return `→ ${event.step.product.shopName}: ${event.step.product.title} ($${event.step.product.priceUsd})`;
     case "step": {
@@ -36,8 +84,9 @@ export function renderEvent(event: RunEvent): string {
       if (o.status === "paid") {
         const r = o.receipt;
         const where = r ? [r.network ?? (r.chainId ? `chain ${r.chainId}` : undefined), r.transaction ? `tx ${r.transaction}` : undefined, r.simulated ? "simulated" : undefined].filter(Boolean).join(", ") : "";
+        const link = explorerTxUrl(r?.chainId, r?.transaction);
         const delivered = describeResponse(o.response);
-        return `  ✓ ${o.explanation}${where ? `\n    ${where}` : ""}${delivered ? `\n    delivered: ${delivered}` : ""}`;
+        return `  ✓ ${o.explanation}${where ? `\n    ${where}` : ""}${link ? `\n    ${link}` : ""}${delivered ? `\n    delivered: ${delivered}` : ""}`;
       }
       return `  ✗ ${o.explanation}${o.code ? `\n    code ${o.code}${o.explanationId ? `, SERV trace ${o.explanationId}` : ""}` : ""}`;
     }
@@ -59,5 +108,10 @@ export function describeResponse(response: unknown): string | undefined {
 export function renderSummary(summary: RunSummary, ledgerPath: string): string {
   const paid = summary.outcomes.filter((o) => o.status === "paid").length;
   const refused = summary.outcomes.length - paid;
-  return [rule, `Run ${summary.runId}: ${paid} paid, ${refused} refused, $${summary.spentUsd} spent.`, `Ledger: ${ledgerPath}`].join("\n");
+  const extra = [summary.quarantined.length ? `${summary.quarantined.length} merchant${summary.quarantined.length === 1 ? "" : "s"} quarantined` : "", summary.redTeam?.status === "refused" ? "injected payment refused by Passport" : ""].filter(Boolean);
+  return [
+    rule,
+    `Run ${summary.runId}: ${paid} paid, ${refused} refused, $${summary.spentUsd} spent${extra.length ? `; ${extra.join("; ")}` : ""}.`,
+    `Ledger: ${ledgerPath}   View it: pursestrings ledger ${summary.runId}`,
+  ].join("\n");
 }
