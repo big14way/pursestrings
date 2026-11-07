@@ -61,6 +61,13 @@ describe("live client", () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it("prefers SERV's console request id over the completion id", async () => {
+    const create = vi.fn(async () => ({ ...completion("ok"), openservRequestId: "b28df2c3-4cec-4c5d-88a8-d6749f6bea11" }));
+    const client = createServClient(testConfig({ SERV_API_KEY: "k" }), { create });
+    const result = await client.reason({ ...request, noCache: true });
+    expect(result).toMatchObject({ requestId: "b28df2c3-4cec-4c5d-88a8-d6749f6bea11", completionId: "chatcmpl_1" });
+  });
+
   it("bypasses the cache when asked", async () => {
     const create = vi.fn(async () => completion("pong"));
     const client = createServClient(testConfig({ SERV_API_KEY: "k" }), { create });

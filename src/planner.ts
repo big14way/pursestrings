@@ -26,7 +26,8 @@ export interface Plan {
   unmet: string[];
   /** Problems found while validating the model's answer. */
   problems: string[];
-  trace: { requestId: string | undefined; model: string; mode: string; cached: boolean };
+  /** model is the id PurseStrings asked for (e.g. the -serv-kronos variant); servedModel is what SERV reports serving. */
+  trace: { requestId: string | undefined; model: string; servedModel?: string; mode: string; cached: boolean };
 }
 
 interface RawStep {
@@ -173,7 +174,8 @@ export async function makePlan(serv: ServClient, task: string, catalog: Catalog,
   const result = await serv.reason(request);
   return validatePlan(extractPlanJson(result.text), catalog, task.trim(), settings.budgetUsd, {
     requestId: result.requestId,
-    model: result.model,
+    model: request.model,
+    ...(result.model && result.model !== request.model ? { servedModel: result.model } : {}),
     mode: result.mode,
     cached: result.cached,
   });

@@ -24,8 +24,10 @@ export interface ReasonRequest {
 export interface ReasonResult {
   text: string;
   model: string;
-  /** Completion id; matches the request in the SERV console Activity view. */
+  /** SERV's request id (x-openserv-request-id): the console's Usage > Activity log lists it. Falls back to the completion id. */
   requestId: string | undefined;
+  /** The completion id from the response body (msg_…). */
+  completionId?: string | undefined;
   finishReason: string | undefined;
   mode: ServMode;
   cached: boolean;
@@ -55,6 +57,8 @@ export class ServError extends Error {
 /** The slice of a chat completion PurseStrings reads. */
 export interface ChatCompletionLike {
   id?: string;
+  /** From the x-openserv-request-id response header, added by the client. */
+  openservRequestId?: string;
   model?: string;
   choices: Array<{ message?: { content?: string | null }; finish_reason?: string | null }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
@@ -162,7 +166,11 @@ export function createServClient(config: Config, options: ServClientOptions = {}
     options.create ??
     (() => {
       const client = new OpenAI({ baseURL: config.serv.baseURL, apiKey: config.serv.apiKey });
-      return (body) => client.chat.completions.create(body as never) as Promise<ChatCompletionLike>;
+      return async (body) => {
+        const { data, response } = await client.chat.completions.create(body as never).withResponse();
+        const openservRequestId = response.headers.get("x-openserv-request-id") ?? undefined;
+        return { ...(data as unknown as ChatCompletionLike), ...(openservRequestId ? { openservRequestId } : {}) };
+      };
     })();
 
   return {
@@ -188,7 +196,8 @@ export function createServClient(config: Config, options: ServClientOptions = {}
       const result: Omit<ReasonResult, "cached" | "latencyMs"> = {
         text: choice?.message?.content ?? "",
         model: response.model ?? body.model,
-        requestId: response.id,
+        requestId: response.openservRequestId ?? response.id,
+        completionId: response.id,
         finishReason: choice?.finish_reason ?? undefined,
         mode: "live",
         usage: response.usage

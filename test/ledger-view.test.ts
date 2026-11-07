@@ -42,6 +42,6 @@ describe("ledger view", () => {
     expect(view).toContain(`tx ${TX} on eip155:2368`);
     expect(view).toContain(`https://testnet.kitescan.ai/tx/${TX}`);
     expect(view).toContain("$0.30 per payment, $0.30 in total, 60 min, 1 endpoint");
-    expect(view).toContain("SERV traces (console.openserv.ai, Activity): msg_plan (plan)");
+    expect(view).toContain("SERV request ids (console.openserv.ai > Usage > Activity): msg_plan (plan)");
   });
 });

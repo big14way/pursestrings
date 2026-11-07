@@ -165,7 +165,7 @@ export function renderRun(list: LedgerEntry[]): string {
     lines.push(`Spent $${str(run.spentUsd)} of $${approved} approved${plan ? ` (budget $${str(plan.budgetUsd)})` : ""}: ${str(run.paid)} paid, ${str(run.refused)} refused.`);
   } else lines.push("This run did not finish (no closing ledger entry).");
   const live = traces.filter((t) => !t.startsWith("mock_"));
-  if (live.length) lines.push(`SERV traces (console.openserv.ai, Activity): ${live.join(", ")}`);
+  if (live.length) lines.push(`SERV request ids (console.openserv.ai > Usage > Activity): ${live.join(", ")}`);
   else if (traces.length) lines.push("SERV ran in mock mode: no console traces for this run.");
   lines.push(rule);
   return lines.join("\n");
