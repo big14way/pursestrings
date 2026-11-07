@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.js";
 import type { Passport } from "./kpass/passport.js";
+import { commandWords } from "./kpass/runner.js";
 import { ServError, type ServClient } from "./serv/client.js";
 
 export type CheckState = "ok" | "warn" | "fail" | "skip";
@@ -77,7 +78,7 @@ async function settledNetworksFromTranscript(path: string): Promise<string[]> {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line) as { mode?: string; args?: string[]; envelope?: { status?: string; x402?: unknown } };
-      if (entry.mode === "live" && entry.args?.[0] === "session" && entry.args[1] === "execute" && entry.envelope?.status === "success") {
+      if (entry.mode === "live" && commandWords(entry.args ?? []).join(" ") === "session execute" && entry.envelope?.status === "success") {
         findNetworks(entry.envelope.x402, networks);
       }
     } catch {

@@ -40,30 +40,50 @@ export const execBinary: ExecFn = (bin, args, { timeoutMs }) =>
     });
   });
 
+/** Returns every top-level {...} block in the text, skipping braces inside strings. */
+export function extractJsonObjects(text: string): string[] {
+  const blocks: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"' && depth > 0) inString = true;
+    else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}" && depth > 0) {
+      depth--;
+      if (depth === 0) blocks.push(text.slice(start, i + 1));
+    }
+  }
+  return blocks;
+}
+
 /**
- * kpass prints one JSON object with --output json. Tolerate log lines before it,
- * and fall back to a synthetic envelope for plain-text output such as --version.
+ * kpass 6.x prints a JSON envelope with --output json; on errors it prints a second,
+ * thinner copy after it. Use the first object that parses, tolerate log lines around
+ * it, and fall back to a synthetic envelope for plain text such as --version.
  */
 export function parseEnvelope(stdout: string, exitCode: number): KpassEnvelope {
   const text = stdout.trim();
-  const candidates = [text];
-  const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i]?.trimStart().startsWith("{")) {
-      candidates.push(lines.slice(i).join("\n"));
-      break;
-    }
-  }
-  for (const candidate of candidates) {
+  for (const block of extractJsonObjects(text)) {
     try {
-      const parsed: unknown = JSON.parse(candidate);
+      const parsed: unknown = JSON.parse(block);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const envelope = parsed as KpassEnvelope;
         if (typeof envelope.status !== "string") envelope.status = exitCode === 0 ? "success" : "error";
         return envelope;
       }
     } catch {
-      // try the next candidate
+      // try the next block
     }
   }
   return exitCode === 0
@@ -115,6 +135,19 @@ export interface LiveRunnerOptions {
   now?: () => number;
 }
 
+/** The command words of a kpass call, e.g. ["session", "execute"], ignoring flags and their values. */
+export function commandWords(args: string[]): string[] {
+  const words: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "--output" || arg === "--base-url") i++;
+    else if (arg.startsWith("--")) {
+      if (words.length > 0) break;
+    } else words.push(arg);
+  }
+  return words;
+}
+
 export function wantsJson(args: string[]): boolean {
   return !args.includes("--version") && !args.includes("--help");
 }
@@ -125,7 +158,8 @@ export function createLiveRunner(options: LiveRunnerOptions): KpassRunner {
   return {
     mode: "live",
     async run(args) {
-      const fullArgs = wantsJson(args) ? [...args, "--output", "json", "--no-interactive"] : args;
+      // Global flags go first: kpass 6.13 rejects `sandbox status --no-interactive` as an unknown command.
+      const fullArgs = wantsJson(args) ? ["--output", "json", "--no-interactive", ...args] : args;
       const started = now();
       const out = await exec(options.bin, fullArgs, { timeoutMs: options.timeoutMs });
       const result: KpassResult = {

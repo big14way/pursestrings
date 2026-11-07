@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { describeError, KpassError } from "../src/kpass/errors.js";
 import { expectOk, Passport } from "../src/kpass/passport.js";
-import { createLiveRunner, parseEnvelope, redact, redactArgs, Transcript, type ExecFn } from "../src/kpass/runner.js";
+import { commandWords, createLiveRunner, extractJsonObjects, parseEnvelope, redact, redactArgs, Transcript, type ExecFn } from "../src/kpass/runner.js";
 import { SimKpass, type Preflight } from "../src/kpass/sim.js";
 import type { Delegation } from "../src/kpass/types.js";
 import { tempDir } from "./helpers.js";
@@ -25,6 +25,22 @@ describe("parseEnvelope", () => {
   it("fills a missing status from the exit code", () => {
     expect(parseEnvelope('{"sessions":[]}', 0).status).toBe("success");
   });
+
+  it("takes the first envelope when kpass 6.x prints two on an error", () => {
+    const stdout = '{\n  "_version": "1",\n  "error": "Not logged in. Run \'kpass login init --email \\u003cEMAIL\\u003e\'",\n  "hint": "Run login",\n  "status": "error"\n}\n{\n  "_version": "1",\n  "error": "Not logged in.",\n  "hint": "",\n  "status": "error"\n}\n';
+    expect(parseEnvelope(stdout, 3)).toMatchObject({ status: "error", hint: "Run login", error: expect.stringContaining("<EMAIL>") });
+  });
+});
+
+describe("extractJsonObjects and commandWords", () => {
+  it("ignores braces inside strings", () => {
+    expect(extractJsonObjects('log {"a":"}{","b":{"c":1}} tail {"d":2}')).toEqual(['{"a":"}{","b":{"c":1}}', '{"d":2}']);
+  });
+
+  it("finds the command words around global flags", () => {
+    expect(commandWords(["--output", "json", "--no-interactive", "session", "execute", "--url", "https://x"])).toEqual(["session", "execute"]);
+    expect(commandWords(["sandbox", "status"])).toEqual(["sandbox", "status"]);
+  });
 });
 
 describe("redaction", () => {
@@ -44,7 +60,7 @@ describe("live runner", () => {
     const path = join(tempDir(), "t.jsonl");
     const runner = createLiveRunner({ bin: "/bin/kpass", timeoutMs: 1000, exec, transcript: new Transcript(path) });
     const result = await runner.run(["agent:register", "--type", "claude"]);
-    expect(calls[0]).toEqual(["agent:register", "--type", "claude", "--output", "json", "--no-interactive"]);
+    expect(calls[0]).toEqual(["--output", "json", "--no-interactive", "agent:register", "--type", "claude"]);
     expect(result.envelope.status).toBe("success");
     const logged = JSON.parse(readFileSync(path, "utf8").trim()) as { envelope: { token: string } };
     expect(logged.envelope.token).toBe("[redacted]");

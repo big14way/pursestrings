@@ -1,8 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findNetworks, formatReport, runDoctor, satisfiesNode } from "../src/doctor.js";
 import { Passport } from "../src/kpass/passport.js";
+import { createLiveRunner } from "../src/kpass/runner.js";
 import { SimKpass } from "../src/kpass/sim.js";
 import { createServClient } from "../src/serv/client.js";
 import { testConfig } from "./helpers.js";
@@ -46,6 +47,17 @@ describe("runDoctor", () => {
     const byId = new Map(report.checks.map((c) => [c.id, c]));
     expect(byId.get("kite-rpc")).toMatchObject({ state: "ok", detail: expect.stringContaining("2368") });
     expect(byId.get("facilitator")).toMatchObject({ state: "ok", detail: expect.stringContaining("exact") });
+  });
+
+  it("reports the chain that live paid calls settled on", async () => {
+    const config = testConfig({}, "/bin/kpass");
+    mkdirSync(config.stateDir, { recursive: true });
+    const paid = { at: "2026-11-07T00:00:00Z", mode: "live", args: ["--output", "json", "--no-interactive", "session", "execute", "--url", "https://shop.test/v1/bundle"], exitCode: 0, envelope: { status: "success", x402: { status_code: 200, chain_id: 2368 } } };
+    writeFileSync(join(config.stateDir, "kpass-transcript.jsonl"), `${JSON.stringify(paid)}\n`);
+    const runner = createLiveRunner({ bin: "/bin/kpass", timeoutMs: 1000, exec: async () => ({ stdout: '{"status":"success","email":"me@test"}', stderr: "", exitCode: 0 }) });
+    const report = await runDoctor({ config, serv: createServClient(config), passport: new Passport(runner) }, { offline: true });
+    expect(report.settlementNetworks).toEqual(["eip155:2368"]);
+    expect(report.checks.find((c) => c.id === "settlement")).toMatchObject({ state: "ok" });
   });
 
   it("fails the SERV check when the key is rejected", async () => {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { Config } from "../config.js";
 import { KpassError } from "./errors.js";
-import { createLiveRunner, Transcript, type KpassResult, type KpassRunner } from "./runner.js";
+import { commandWords, createLiveRunner, Transcript, type KpassResult, type KpassRunner } from "./runner.js";
 import { SimKpass, type SimOptions } from "./sim.js";
 import type { ApprovalRequested, Delegation, ExecuteSucceeded, KpassEnvelope, SessionApproved, SessionPreview } from "./types.js";
 
@@ -80,7 +80,7 @@ export class Passport {
 export function expectOk<T extends KpassEnvelope>(result: KpassResult): T {
   const { envelope, exitCode } = result;
   if (exitCode !== 0 || !NON_ERROR_STATUSES.has(envelope.status)) {
-    throw new KpassError(envelope, exitCode, result.args.filter((a) => !a.startsWith("{")).slice(0, 3).join(" "));
+    throw new KpassError(envelope, exitCode, commandWords(result.args).join(" "));
   }
   return envelope as T;
 }
