@@ -6,21 +6,34 @@ PurseStrings is a shopping and payments agent bounded by a Kite Agent Passport s
 
 ## Status
 
-In active development. Working today:
+Built for SERV Hackathon Edition 02 (Kite track). Working today:
 - the agent loop (`pursestrings run`): discover, plan with SERV, approve limits with a passkey, pay over x402, explain;
-- demo merchants on the Kite testnet, including MegaDeals, a deliberately malicious one;
-- prompt-injection defences and a red-team mode that tests the Passport session directly;
+- demo merchants on the Kite testnet, live on Render, including MegaDeals, a deliberately malicious one;
+- prompt-injection defences, and a red-team mode that tests the Passport session directly;
 - an audit view of every run (`pursestrings ledger`).
 
-It all runs with zero credentials against the built-in Passport simulator.
+Verified live (evidence below):
+- real x402 settlement of pieUSD on Kite testnet to the deployed merchant;
+- SERV Reasoning planning on Kronos and explaining decisions, each call traceable in the SERV console;
+- the real Kite Passport (dev backend, passkey-approved session) refusing the injected payment.
+
+Not yet: live Passport payments to our own merchants. Kite Passport only pays hosts in Kite's catalog, so it refuses `pursestrings-merchant.onrender.com` with `payment_target_forbidden` until Kite allowlists it. Until then the honest purchases run against the built-in Passport simulator, which enforces the same caps.
+
+Everything runs with zero credentials against the simulator.
 
 ## Quick start
 
-Requires Node.js 20.12 or later.
+Requires Node.js 20.12 or later. One command, no clone:
 
 ```bash
-npm install
-npm run build
+npx github:big14way/pursestrings doctor
+npx github:big14way/pursestrings run "Get me the cheapest 1GB data bundle under \$0.50 for +2348012345678 and a ride quote from Yaba to Victoria Island" --red-team
+```
+
+Or from a clone:
+
+```bash
+npm install          # also builds dist/
 node dist/cli.js doctor
 ```
 
@@ -71,13 +84,22 @@ An agent that pays can be robbed. Merchant pages are written by the merchant, so
 
 1. **PurseStrings quarantines it.** Every string in a catalog is scanned for text that addresses AI agents, overrides their rules, redirects funds or asks for secrecy. A merchant that does any of this never reaches the planner and cannot be paid. SERV explains the decision in one sentence, with `serv_prompt_guard` declared on that call.
 2. **PurseStrings checks every payment in code.** The planner can only name catalog product ids. Before each payment, the merchant's live 402 must match the listing: network, token, receiving wallet and price. MegaDeals' bait-and-switch is refused even when its listing carries no injected text.
-3. **Kite Passport bounds the session.** Even an agent that was fully fooled can only spend inside the session you approved with your passkey. `run --red-team` shows this. After approval it plays the fooled agent: it asks Passport to pay MegaDeals' $1.00 demand directly, with PurseStrings' own checks off. Passport refuses (`session_rule_exceeded`: over the $0.30 per-payment cap), and nothing is paid. Red-team mode only ever targets Kite testnet merchants.
+3. **Kite Passport bounds the session.** Even an agent that was fully fooled can only spend inside the session you approved with your passkey. `run --red-team` shows this. After approval it plays the fooled agent: it asks Passport to pay MegaDeals' $1.00 demand directly, with PurseStrings' own checks off. In the simulator Passport refuses with `session_rule_exceeded` (over the $0.30 per-payment cap). Against the real Kite Passport (dev backend, session approved with a passkey) it refuses with `payment_target_forbidden` (`host_not_in_executable_catalog`). Either way nothing is paid. Red-team mode only ever targets Kite testnet merchants.
 
-SERV's `serv_prompt_guard` is declared on every call that carries merchant text, and its verdicts appear in the SERV console's Safety report. It targets attempts to extract or override the system prompt, so PurseStrings does not rely on it alone.
+SERV's `serv_prompt_guard` is declared on every call that carries merchant text, and its verdicts appear in the SERV console's Safety report. It targets attempts to extract or override the system prompt, and in our tests it let the MegaDeals text through to the model (which then explained the block correctly), so PurseStrings does not rely on it alone.
+
+## How SERV Reasoning powers it
+
+PurseStrings calls SERV Reasoning through the OpenAI SDK at `https://inference-api.openserv.ai/v1`.
+
+- **Planning on Kronos.** The planner runs on `claude-sonnet-5-serv-kronos`, so the Kronos audit checks the planning prompt. It declares `serv_prompt_guard` and `serv_shadow_agent` (its hint: every step must be a catalog id, inputs must come from the task, the total must fit the budget). The model only names catalog product ids; code validates the plan.
+- **One-sentence explanations.** Every quarantine and every refusal is explained by `claude-haiku-4.5`, with the merchant's text passed as quoted data and the guard declared. The subject is whoever decided: PurseStrings, Kite Passport or the merchant.
+- **Traceable.** Each call's `x-openserv-request-id` goes into the ledger, and the SERV console lists the same id under Usage > Activity, so every decision can be matched to its call, cost and latency.
+- **Cheap.** A full run costs a few cents of SERV credit (two to eight cents in our runs); responses are cached locally while developing.
 
 ## The ledger
 
-Every run is appended to `.pursestrings/ledger.jsonl`. Its entries are: the merchants found or quarantined, the plan with its SERV trace id, the limits you approved, the red-team attempt, each payment with its transaction, and each refusal with who refused and why.
+Every run is appended to `.pursestrings/ledger.jsonl`. Its entries are: the merchants found or quarantined, the plan with its SERV request id, the limits you approved, the red-team attempt, each payment with its transaction, and each refusal with who refused and why.
 
 ```bash
 node dist/cli.js ledger          # recent runs
@@ -105,6 +127,23 @@ npm run merchant:sim   # local only: simulated facilitator, no funds move; MegaD
 An unpaid request gets a 402 challenge. A request with a valid payment is fulfilled and then settled; invalid orders are never charged. `merchant/scripts/buy.ts` pays a route directly from a testnet wallet to check settlement end to end.
 
 Deploy both on Render's free plan with the included `render.yaml` (New > Blueprint). Free instances sleep when idle, so the first request after a while takes up to a minute.
+
+## Evidence
+
+| What | Where |
+| --- | --- |
+| x402 payment to the deployed merchant (0.02 pieUSD, ride quote) | [0x4381…a95a](https://testnet.kitescan.ai/tx/0x438173217add452680c80fddda55302e1934046b5831f9fc73dc39d9a9c5a95a) |
+| x402 payment to the merchant (0.30 pieUSD, 1 GB bundle) | [0xb453…ca34](https://testnet.kitescan.ai/tx/0xb453c167de285c6652a95c8ad3579e945429d30d8cbd1127b72c002c999aca34) |
+| Merchant receiving wallet | [0x706F…89cc](https://testnet.kitescan.ai/address/0x706F739AE390375A1Df4046879a47DC2D46389cc) |
+| Live MegaDeals listing (the injection) | [pursestrings-megadeals.onrender.com/catalog](https://pursestrings-megadeals.onrender.com/catalog) |
+| Real Kite Passport refusing the injected payment | `payment_target_forbidden`, session approved by passkey on the dev backend |
+
+Both payments were made with `merchant/scripts/buy.ts` (an x402 client paying from a testnet wallet), not through Passport.
+
+## Business model
+
+- **0.5% on policy-enforced spend:** a rail fee on payments that settle inside the limits the user approved.
+- **Merchant listings:** a fee for merchants that want PurseStrings agents to find them.
 
 ## Development
 
