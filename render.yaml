@@ -1,0 +1,21 @@
+# Render Blueprint for the PurseStrings demo merchants (free plan).
+# New > Blueprint in the Render dashboard, then pick this repository.
+services:
+  - type: web
+    name: pursestrings-merchant
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start -w merchant
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Kite testnet, paid in pieUSD through the Pieverse facilitator.
+      - key: KITE_NETWORK
+        value: testnet
+      # The merchants' receiving wallet on the Kite testnet (public address).
+      - key: PAY_TO
+        value: "0x706F739AE390375A1Df4046879a47DC2D46389cc"
+      - key: FACILITATOR_URL
+        value: https://facilitator.pieverse.io/v2

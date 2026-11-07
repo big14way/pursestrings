@@ -17,11 +17,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p merchant/tsconfig.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
     "dev": "tsx src/cli.ts",
-    "doctor": "tsx src/cli.ts doctor"
+    "doctor": "tsx src/cli.ts doctor",
+    "merchant": "npm start -w merchant",
+    "merchant:sim": "MERCHANT_FACILITATOR=simulated MERCHANT_PAY_TO=${MERCHANT_PAY_TO:-0x706F739AE390375A1Df4046879a47DC2D46389cc} npm start -w merchant"
   },
   "dependencies": {
     "openai": "^7.53.0"
@@ -31,5 +33,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
-  }
+  },
+  "workspaces": [
+    "merchant"
+  ]
 }

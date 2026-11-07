@@ -1,0 +1,25 @@
+{
+  "name": "pursestrings-merchant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PurseStrings demo merchants: x402 paid shops on the Kite testnet, built on kite-x402-hono.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=../.env src/main.ts",
+    "dev": "node --env-file-if-exists=../.env --watch src/main.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@x402/core": "2.29.0",
+    "hono": "^4.13.17",
+    "kite-x402-hono": "^0.5.0"
+  },
+  "devDependencies": {
+    "@x402/evm": "2.29.0",
+    "@x402/fetch": "2.29.0"
+  }
+}

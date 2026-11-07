@@ -33,6 +33,27 @@ To go live:
 
 `doctor` writes its report and every kpass exchange to `.pursestrings/` (git-ignored) so runs can be audited and replayed.
 
+## Demo merchants
+
+`merchant/` is the shop side: four demo merchants (two competing data-bundle sellers, a ride-quote service and an airtime seller) selling over x402 on the Kite testnet. Each product is its own paid route built on [kite-x402-hono](https://github.com/BrKDDD/kite-x402-hono), priced in pieUSD and settled through the Pieverse facilitator.
+
+```bash
+npm run merchant       # real settlement on the Kite testnet (needs MERCHANT_PAY_TO)
+npm run merchant:sim   # local only: simulated facilitator, no funds move
+```
+
+| Route | What it is |
+| --- | --- |
+| `GET /catalog` | Free directory of shops, products, prices and paid URLs |
+| `GET /.well-known/x402` | x402 discovery for every paid route |
+| `POST /v1/<shop>/<product>` | Paid purchase, e.g. `/v1/brightwave/data-1gb` with `{"phone":"+234..."}` |
+| `GET /v1/ridemate/quote?from=&to=` | Paid ride quote |
+| `GET /healthz`, `GET /readyz` | Liveness, and facilitator readiness for the Kite testnet |
+
+An unpaid request gets a 402 challenge. A request with a valid payment is fulfilled and then settled; invalid orders are never charged. `merchant/scripts/buy.ts` pays a route directly from a testnet wallet to check settlement end to end.
+
+Deploy on Render's free plan with the included `render.yaml` (New > Blueprint).
+
 ## Development
 
 ```bash
