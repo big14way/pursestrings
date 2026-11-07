@@ -23,7 +23,7 @@
     "dev": "tsx src/cli.ts",
     "doctor": "tsx src/cli.ts doctor",
     "merchant": "npm start -w merchant",
-    "merchant:sim": "MERCHANT_FACILITATOR=simulated MERCHANT_PROFILE=marketplace,megadeals MERCHANT_PAY_TO=${MERCHANT_PAY_TO:-0x706F739AE390375A1Df4046879a47DC2D46389cc} npm start -w merchant",
+    "merchant:sim": "MERCHANT_FACILITATOR=simulated MERCHANT_PROFILE=marketplace,megadeals,datadash,quickdata MERCHANT_PAY_TO=${MERCHANT_PAY_TO:-0x706F739AE390375A1Df4046879a47DC2D46389cc} npm start -w merchant",
     "prepare": "node scripts/prepare.mjs"
   },
   "dependencies": {

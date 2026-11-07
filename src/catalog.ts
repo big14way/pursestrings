@@ -1,4 +1,5 @@
 import { cleanText, scanDocument, type InjectionFinding } from "./injection.js";
+import { listingText } from "./screen.js";
 
 /**
  * Merchant discovery. The agent reads each merchant's free /catalog; the products
@@ -35,6 +36,8 @@ export interface Catalog {
   products: Product[];
   /** Text anywhere in the catalog that tries to instruct the agent. */
   findings: InjectionFinding[];
+  /** The listing's free text, cleaned, for the SERV screen. */
+  listing: Record<string, unknown>;
 }
 
 const PRICE = /^\d+(\.\d{1,6})?$/;
@@ -104,6 +107,7 @@ export function parseCatalog(source: string, doc: unknown): Catalog {
     asset: { address: text(asset.address, 42), symbol: text(asset.symbol, 16), decimals: Number(asset.decimals) || 0 },
     products,
     findings: scanDocument(doc),
+    listing: listingText(doc),
   };
 }
 

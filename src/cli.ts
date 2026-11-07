@@ -13,6 +13,7 @@ import { Ledger } from "./ledger.js";
 import { listRuns, renderRun, renderRunList } from "./ledger-view.js";
 import { toMicros } from "./money.js";
 import { mockPlanResponder } from "./planner.js";
+import { mockScreenResponder } from "./screen.js";
 import { renderEvent, renderSummary } from "./render.js";
 import { createServClient } from "./serv/client.js";
 
@@ -22,7 +23,7 @@ const HELP = `pursestrings: your agent shops, you hold the purse strings.
 
 Usage:
   pursestrings run "<task>" [--budget 1.00] [--merchant <url>]... [--yes] [--red-team]
-  pursestrings ledger [<run id> | last] [--json]
+  pursestrings ledger [<run id> | last | verify] [--json]
   pursestrings doctor [--offline] [--probe-serv] [--json]
   pursestrings --version
 
@@ -30,9 +31,11 @@ Commands:
   run      Plan the task with SERV Reasoning, ask Kite Passport for a spending
            session bounded by the plan (you approve it with a passkey), then pay
            each merchant, explaining every payment and refusal. A merchant
-           whose listing tries to instruct the agent is quarantined.
-  ledger   The audit trail: recent runs, or one run in full (merchants, plan,
-           approved limits, payments with transaction links, refusals).
+           whose listing tries to instruct or steer the agent is quarantined
+           (a pattern scan, then a SERV screen of the listing's meaning).
+  ledger   The audit trail: recent runs, or one run in full (agent identity,
+           merchants, plan, approved limits, payments with transaction links,
+           refusals). Entries are hash-chained; "ledger verify" checks the chain.
   doctor   Check SERV Reasoning, Kite Passport and the Kite testnet, and report
            what payments settle on.
 
@@ -61,7 +64,7 @@ function version(): string {
 }
 
 function servClient(config: Config) {
-  return createServClient(config, { mockResponders: { plan: mockPlanResponder, explain: mockExplainResponder } });
+  return createServClient(config, { mockResponders: { plan: mockPlanResponder, explain: mockExplainResponder, screen: mockScreenResponder } });
 }
 
 async function ask(question: string): Promise<boolean> {
@@ -141,8 +144,15 @@ async function main(argv: string[]): Promise<number> {
     }
     case "ledger": {
       const ledger = new Ledger(join(config.stateDir, "ledger.jsonl"));
-      const entries = await ledger.read();
       const which = positionals[1];
+      if (which === "verify") {
+        const report = await ledger.verify();
+        if (values.json) console.log(JSON.stringify(report, null, 2));
+        else if (report.ok) console.log(`Ledger intact: ${report.chained} chained entries${report.unchained ? ` (after ${report.unchained} older unchained ones)` : ""}, head ${report.head ?? "none"}.`);
+        else console.log(`Ledger BROKEN at line ${report.brokenAt}: ${report.reason}.`);
+        return report.ok ? 0 : 1;
+      }
+      const entries = await ledger.read();
       if (!which) {
         const runs = listRuns(entries);
         console.log(values.json ? JSON.stringify(runs, null, 2) : renderRunList(runs));

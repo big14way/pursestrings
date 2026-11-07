@@ -41,6 +41,8 @@ export interface Explanation {
 export async function explainDecision(serv: ServClient, model: string, facts: DecisionFacts): Promise<Explanation> {
   try {
     const result = await serv.reason(explainRequest(facts, model));
+    // A guard block returns a refusal line, not an explanation: use the template.
+    if (result.finishReason === "content_filter") return { text: templateExplanation(facts), requestId: result.requestId };
     const text = result.text.trim().split("\n")[0]?.slice(0, 300) ?? "";
     return { text: text || templateExplanation(facts), requestId: result.requestId };
   } catch {

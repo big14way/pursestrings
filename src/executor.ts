@@ -10,6 +10,7 @@ import { fromMicros, toMicros } from "./money.js";
 import { makePlan, type Plan, type PlanStep } from "./planner.js";
 import { checkChallenge, checkStep, delegationFromPlan, stepRequest } from "./policy.js";
 import type { ServClient } from "./serv/client.js";
+import { screenFinding, screenListing, type ScreenVerdict } from "./screen.js";
 import { readChallenge, type Challenge } from "./x402.js";
 
 /**
@@ -23,6 +24,38 @@ import { readChallenge, type Challenge } from "./x402.js";
 /** The only network the red team will attack: Kite testnet, where nothing has real value. */
 export const RED_TEAM_NETWORK = "eip155:2368";
 
+/** PurseStrings' rail fee on policy-enforced spend, in basis points (0.5%). Accrued, not charged on testnet. */
+export const FEE_BPS = 50n;
+
+export function feeOf(spentMicros: bigint): string {
+  return fromMicros((spentMicros * FEE_BPS) / 10_000n);
+}
+
+/** Refusals at the live-402 check that another merchant's identical product can stand in for. */
+const REPLACEABLE = new Set(["payee_changed", "price_changed", "wrong_asset", "wrong_network", "no_payment_challenge", "merchant_unreachable"]);
+
+/** Who is shopping: the Passport agent and its owner, as Kite Passport reports them. */
+export interface AgentIdentity {
+  agentId: string | undefined;
+  agentType: string | undefined;
+  userId: string | undefined;
+  backend: string | undefined;
+  mode: string;
+}
+
+export async function readIdentity(passport: Passport): Promise<AgentIdentity> {
+  try {
+    const env = (await passport.status()) as Record<string, unknown>;
+    const agent = (env.agent ?? {}) as Record<string, unknown>;
+    const user = (env.user ?? {}) as Record<string, unknown>;
+    const backend = (env.backend ?? {}) as Record<string, unknown>;
+    const s = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    return { agentId: s(agent.agent_id), agentType: s(agent.type), userId: s(user.user_id), backend: s(backend.url) ?? s(env.backend), mode: passport.mode };
+  } catch {
+    return { agentId: undefined, agentType: undefined, userId: undefined, backend: undefined, mode: passport.mode };
+  }
+}
+
 export interface Receipt {
   sessionId: string | undefined;
   spentTotalUsd: string | undefined;
@@ -30,6 +63,8 @@ export interface Receipt {
   network: string | undefined;
   transaction: string | undefined;
   simulated: boolean;
+  /** The wallet the merchant says paid, from its receipt. */
+  paidBy?: string;
 }
 
 export interface StepOutcome {
@@ -42,6 +77,8 @@ export interface StepOutcome {
   code?: string;
   explanation: string;
   explanationId?: string;
+  /** A fact PurseStrings adds to the explanation, e.g. that Passport's limits alone would have paid. */
+  note?: string;
   receipt?: Receipt;
   response?: unknown;
 }
@@ -49,6 +86,10 @@ export interface StepOutcome {
 export interface Quarantine {
   merchant: string;
   source: string;
+  /** The pattern scan reads the words; the SERV screen reads the meaning. */
+  detectedBy: "pattern scan" | "SERV screen";
+  /** SERV's serv_prompt_guard refused the listing outright. */
+  guardBlocked?: boolean;
   findings: InjectionFinding[];
   /** Wallets the injected text wants paid. */
   addresses: string[];
@@ -75,7 +116,8 @@ export interface RedTeamOutcome {
 }
 
 export type RunEvent =
-  | { type: "catalog"; merchant: string; source: string; products: number }
+  | { type: "identity"; identity: AgentIdentity }
+  | { type: "catalog"; merchant: string; source: string; products: number; screen?: Pick<ScreenVerdict, "verdict" | "requestId" | "reason"> }
   | { type: "catalog-error"; source: string; error: string }
   | { type: "quarantine"; quarantine: Quarantine }
   | { type: "plan"; plan: Plan }
@@ -86,16 +128,20 @@ export type RunEvent =
   | { type: "redteam"; outcome: RedTeamOutcome }
   | { type: "step-start"; index: number; step: PlanStep }
   | { type: "step"; outcome: StepOutcome }
+  | { type: "fallback"; index: number; refused: PlanStep; alternative: PlanStep }
   | { type: "stopped"; reason: string };
 
 export interface RunSummary {
   runId: string;
+  identity: AgentIdentity | undefined;
   plan: Plan | undefined;
   sessionId: string | undefined;
   quarantined: Quarantine[];
   redTeam: RedTeamOutcome | undefined;
   outcomes: StepOutcome[];
   spentUsd: string;
+  /** PurseStrings' 0.5% rail fee on what was spent; accrued, not charged on testnet. */
+  feeUsd: string;
   stoppedReason: string | undefined;
 }
 
@@ -192,14 +238,17 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
   const quarantined: Quarantine[] = [];
   const quarantinedCatalogs: Catalog[] = [];
   let redTeam: RedTeamOutcome | undefined;
+  let identity: AgentIdentity | undefined;
   const summary = (plan: Plan | undefined, sessionId: string | undefined, spent: string, stoppedReason?: string): RunSummary => ({
     runId,
+    identity,
     plan,
     sessionId,
     quarantined,
     redTeam,
     outcomes,
     spentUsd: spent,
+    feeUsd: feeOf(toMicros(spent)),
     stoppedReason,
   });
   const stop = async (plan: Plan | undefined, sessionId: string | undefined, spent: string, reason: string) => {
@@ -208,8 +257,14 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
     return summary(plan, sessionId, spent, reason);
   };
 
+  // 0. Who is shopping: the Passport agent identity every session and payment belongs to.
+  identity = await readIdentity(passport);
+  await ledger.append(runId, "identity", { ...identity });
+  emit({ type: "identity", identity });
+
   // 1. Discover merchants. Only their origins may ever be paid, and a merchant whose
-  //    listing tries to instruct the agent is quarantined before the planner sees it.
+  //    listing tries to instruct or steer the agent is quarantined before the planner
+  //    sees it: the pattern scan reads the words, then SERV reads the meaning.
   const catalogs: Catalog[] = [];
   const discovered: Array<Record<string, unknown>> = [];
   for (const merchant of options.merchants) {
@@ -223,16 +278,27 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
       continue;
     }
     if (catalog.findings.length === 0) {
-      catalogs.push(catalog);
-      discovered.push({ source: catalog.source, merchant: catalog.name, status: "ok", products: catalog.products.length });
-      emit({ type: "catalog", merchant: catalog.name, source: catalog.source, products: catalog.products.length });
+      const screen = await screenListing(serv, config.serv.fastModel, catalog.listing);
+      if (screen.verdict !== "steering") {
+        catalogs.push(catalog);
+        const screened = { verdict: screen.verdict, requestId: screen.requestId, reason: screen.reason };
+        discovered.push({ source: catalog.source, merchant: catalog.name, status: "ok", products: catalog.products.length, screen: screened });
+        emit({ type: "catalog", merchant: catalog.name, source: catalog.source, products: catalog.products.length, screen: screened });
+        continue;
+      }
+      // SERV's reason is the explanation: one call, no second one to explain it.
+      const record: Quarantine = { merchant: catalog.name, source: catalog.source, detectedBy: "SERV screen", ...(screen.guardBlocked ? { guardBlocked: true } : {}), findings: [screenFinding(screen)], addresses: [], explanation: screen.reason, explanationId: screen.requestId };
+      quarantined.push(record);
+      quarantinedCatalogs.push(catalog);
+      discovered.push({ ...record, status: "quarantined", products: catalog.products.length });
+      emit({ type: "quarantine", quarantine: record });
       continue;
     }
     const findings = rankFindings(catalog.findings);
     const worst = findings[0]!;
     const facts: DecisionFacts = { outcome: "quarantined", merchant: catalog.name, refusedBy: "PurseStrings", code: "prompt_injection", detail: KIND_LABEL[worst.kind], quote: worst.excerpt };
     const explained = await explainDecision(serv, config.serv.fastModel, facts);
-    const record: Quarantine = { merchant: catalog.name, source: catalog.source, findings, addresses: addressesIn(findings), explanation: explained.text, explanationId: explained.requestId };
+    const record: Quarantine = { merchant: catalog.name, source: catalog.source, detectedBy: "pattern scan", findings, addresses: addressesIn(findings), explanation: explained.text, explanationId: explained.requestId };
     quarantined.push(record);
     quarantinedCatalogs.push(catalog);
     discovered.push({ ...record, status: "quarantined", products: catalog.products.length });
@@ -275,71 +341,139 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
   await ledger.append(runId, "session", { sessionId, requestId: request.request_id, delegation, expiresAt: approval.approved.session.expires_at, mode: passport.mode });
   emit({ type: "approved", sessionId, expiresAt: approval.approved.session.expires_at });
 
-  let spent = 0n;
+  // What each approved session has spent, as Passport reports it.
+  const main = { id: sessionId, plan, spent: 0n };
+  let spentElsewhere = 0n;
+  const totalSpent = () => main.spent + spentElsewhere;
 
   // 3b. Red team: what if the injection had worked? Ask Passport to pay the
   //     quarantined merchant's real demand, with PurseStrings' own checks off.
   if (options.redTeam) {
     redTeam = await attemptInjectedPayment();
     if (redTeam) {
-      if (redTeam.receipt?.spentTotalUsd) spent = toMicros(redTeam.receipt.spentTotalUsd);
+      if (redTeam.receipt?.spentTotalUsd) main.spent = toMicros(redTeam.receipt.spentTotalUsd);
       await ledger.append(runId, "redteam", { ...redTeam });
       emit({ type: "redteam", outcome: redTeam });
     }
   }
 
-  // 4. Pay step by step.
+  // 4. Pay step by step. A step refused at the live-402 check may be replaced by the
+  //    same product from another merchant, under a new limit the user approves.
+  const refusedOrigins = new Set<string>();
   for (const [index, step] of plan.steps.entries()) {
     emit({ type: "step-start", index, step });
+    const result = await payStep(step, index, main, `${runId}-${index}`);
+    if (result.status === "refused" && result.code && REPLACEABLE.has(result.code)) {
+      refusedOrigins.add(new URL(step.product.url).origin);
+      await replace(step, index);
+    }
+  }
+  const spentUsd = fromMicros(totalSpent());
+  await ledger.append(runId, "run", {
+    finished: true,
+    spentUsd,
+    feeUsd: feeOf(totalSpent()),
+    paid: outcomes.filter((o) => o.status === "paid").length,
+    refused: outcomes.filter((o) => o.status === "refused").length,
+  });
+  return summary(plan, sessionId, spentUsd);
+
+  /** Checks one step in code, then asks Passport to pay it from the given session. */
+  async function payStep(step: PlanStep, index: number, session: { id: string; plan: Plan; spent: bigint }, idempotencyKey: string): Promise<StepOutcome> {
     const base = { index, merchant: step.product.shopName, item: step.product.title, priceUsd: step.product.priceUsd };
-    const refuse = async (refusedBy: NonNullable<DecisionFacts["refusedBy"]>, code: string, detail: string, remedy?: string) => {
+    const refuse = async (refusedBy: NonNullable<DecisionFacts["refusedBy"]>, code: string, detail: string, remedy?: string, note?: string) => {
       const facts: DecisionFacts = { outcome: "refused", merchant: base.merchant, item: base.item, priceUsd: base.priceUsd, refusedBy, code, detail, remedy };
       const explained = await explainDecision(serv, config.serv.fastModel, facts);
-      const outcome: StepOutcome = { ...base, status: "refused", refusedBy, code, explanation: explained.text, explanationId: explained.requestId };
+      const outcome: StepOutcome = { ...base, status: "refused", refusedBy, code, explanation: explained.text, explanationId: explained.requestId, ...(note ? { note } : {}) };
       outcomes.push(outcome);
-      await ledger.append(runId, "refusal", { ...outcome, url: step.product.url, detail });
+      await ledger.append(runId, "refusal", { ...outcome, url: step.product.url, sessionId: session.id, detail });
       emit({ type: "step", outcome });
+      return outcome;
     };
 
-    const decision = checkStep(plan, step, fromMicros(spent), allowedOrigins);
-    if (!decision.ok) {
-      await refuse("PurseStrings", decision.code, decision.detail);
-      continue;
-    }
+    const decision = checkStep(session.plan, step, fromMicros(session.spent), allowedOrigins);
+    if (!decision.ok) return refuse("PurseStrings", decision.code, decision.detail);
+    let challenge: Challenge | undefined;
     let challengeDecision;
     try {
-      challengeDecision = checkChallenge(step, await probeChallenge(fetchFn, step), catalog);
+      challenge = await probeChallenge(fetchFn, step);
+      challengeDecision = checkChallenge(step, challenge, catalog);
     } catch (error) {
       challengeDecision = { ok: false as const, code: "merchant_unreachable", detail: (error as Error).message };
     }
     if (!challengeDecision.ok) {
-      await refuse("PurseStrings", challengeDecision.code, challengeDecision.detail);
-      continue;
+      // Passport's session caps amounts; it has no rule about who is paid or what was
+      // listed. Say so when the session alone would have let this payment through.
+      const asked = challenge?.priceUsd !== undefined ? toMicros(usd(challenge.priceUsd) ?? "0") : undefined;
+      const caps = session.plan;
+      const withinCaps = asked !== undefined && asked <= toMicros(caps.perTxCapUsd) && session.spent + asked <= toMicros(caps.totalUsd);
+      const note = withinCaps ? `Your Passport limits alone would have allowed this payment ($${usd(challenge?.priceUsd)} is within the $${caps.perTxCapUsd} cap): they cap amounts, not who is paid.` : undefined;
+      const detail = note ? `${challengeDecision.detail}; your Passport limits alone would have allowed this payment, because they cap amounts, not who is paid` : challengeDecision.detail;
+      return refuse("PurseStrings", challengeDecision.code, detail, undefined, note);
     }
     const req = stepRequest(step);
     const headers = req.body ? { "content-type": "application/json" } : undefined;
     try {
-      const paid = await passport.execute({ url: req.url, method: req.method, headers, body: req.body, idempotencyKey: `${runId}-${index}`, sessionId });
+      const paid = await passport.execute({ url: req.url, method: req.method, headers, body: req.body, idempotencyKey, sessionId: session.id });
       const status = paid.x402?.status_code ?? 0;
-      if (status < 200 || status >= 300) {
-        await refuse("merchant", `merchant_http_${status}`, `the merchant answered HTTP ${status}`);
-        continue;
-      }
+      if (status < 200 || status >= 300) return refuse("merchant", `merchant_http_${status}`, `the merchant answered HTTP ${status}`);
       const receipt = receiptOf(paid as unknown as Record<string, unknown>);
-      spent = receipt.spentTotalUsd ? toMicros(receipt.spentTotalUsd) : spent + toMicros(step.product.priceUsd);
+      const before = session.spent;
+      session.spent = receipt.spentTotalUsd ? toMicros(receipt.spentTotalUsd) : session.spent + toMicros(step.product.priceUsd);
+      if (session !== main) spentElsewhere += session.spent - before;
       const explanation = templateExplanation({ outcome: "paid", merchant: base.merchant, item: base.item, priceUsd: base.priceUsd });
-      const outcome: StepOutcome = { ...base, status: "paid", explanation, receipt, response: paid.x402?.parsed_response_body ?? paid.x402?.response_body };
+      const response = paid.x402?.parsed_response_body ?? paid.x402?.response_body;
+      const paidBy = response && typeof response === "object" ? (response as Record<string, unknown>).paidBy : undefined;
+      const outcome: StepOutcome = { ...base, status: "paid", explanation, receipt: { ...receipt, ...(typeof paidBy === "string" ? { paidBy } : {}) }, response };
       outcomes.push(outcome);
-      await ledger.append(runId, "payment", { ...outcome, url: req.url, why: step.why });
+      await ledger.append(runId, "payment", { ...outcome, url: req.url, sessionId: session.id, agentId: identity?.agentId, why: step.why });
       emit({ type: "step", outcome });
+      return outcome;
     } catch (error) {
       if (!(error instanceof KpassError)) throw error;
-      await refuse(error.code === "merchant_request_failed" ? "merchant" : "Kite Passport", error.code, error.plainMessage, error.info.remedy);
+      return refuse(error.code === "merchant_request_failed" ? "merchant" : "Kite Passport", error.code, error.plainMessage, error.info.remedy);
     }
   }
-  const spentUsd = fromMicros(spent);
-  await ledger.append(runId, "run", { finished: true, spentUsd, paid: outcomes.filter((o) => o.status === "paid").length, refused: outcomes.filter((o) => o.status === "refused").length });
-  return summary(plan, sessionId, spentUsd);
+
+  /**
+   * The same product from another merchant: same category, same facts, same inputs.
+   * It needs its own limit, so the user approves a new session for just this item.
+   */
+  async function replace(refused: PlanStep, index: number): Promise<void> {
+    const sameFacts = (a: Product, b: Product) => JSON.stringify(Object.entries(a.facts).sort()) === JSON.stringify(Object.entries(b.facts).sort());
+    const sameInputs = (a: Product, b: Product) => a.params.map((p) => p.name).sort().join() === b.params.map((p) => p.name).sort().join();
+    const candidates = catalog.products
+      .filter((p) => p.category === refused.product.category && sameFacts(p, refused.product) && sameInputs(p, refused.product))
+      .filter((p) => !refusedOrigins.has(new URL(p.url).origin) && p.url !== refused.product.url)
+      .sort((a, b) => (toMicros(a.priceUsd) < toMicros(b.priceUsd) ? -1 : 1));
+    const product = candidates[0];
+    if (!product) return;
+    const others = plan.steps.filter((s) => s !== refused).reduce((acc, s) => acc + toMicros(s.product.priceUsd), 0n);
+    if (others + toMicros(product.priceUsd) > toMicros(plan.budgetUsd)) return;
+    const alternative: PlanStep = { product, inputs: refused.inputs, why: `same ${refused.product.title} from ${product.shopName}, after ${refused.product.shopName} was refused` };
+    emit({ type: "fallback", index, refused, alternative });
+    const altPlan: Plan = { ...plan, steps: [alternative], totalUsd: product.priceUsd, perTxCapUsd: product.priceUsd, rationale: alternative.why, unmet: [], problems: [] };
+    const delegation = delegationFromPlan(altPlan, options.ttlSeconds);
+    const preview = await passport.previewSession(delegation);
+    const question = typeof preview.user_message === "string" ? preview.user_message : `Approve a separate $${product.priceUsd} limit for ${product.shopName}?`;
+    emit({ type: "preview", message: question });
+    if (!(await options.confirm(question))) {
+      await ledger.append(runId, "fallback", { index, refused: refused.product.url, alternative: product.url, approved: false });
+      return;
+    }
+    const request = await passport.requestSession(delegation);
+    emit({ type: "approval", message: String(request.user_message ?? ""), url: request.approval_url });
+    const approval = await passport.waitForApproval(request.request_id);
+    if (approval.state !== "approved") {
+      await ledger.append(runId, "fallback", { index, refused: refused.product.url, alternative: product.url, approved: false });
+      return;
+    }
+    const altSession = { id: approval.approved.session_id, plan: altPlan, spent: 0n };
+    await ledger.append(runId, "session", { sessionId: altSession.id, requestId: request.request_id, delegation, expiresAt: approval.approved.session.expires_at, mode: passport.mode, replaces: refused.product.url });
+    emit({ type: "approved", sessionId: altSession.id, expiresAt: approval.approved.session.expires_at });
+    emit({ type: "step-start", index, step: alternative });
+    await payStep(alternative, index, altSession, `${runId}-${index}-alt`);
+  }
 
   async function attemptInjectedPayment(): Promise<RedTeamOutcome | undefined> {
     // The fooled agent goes for the biggest demand among the quarantined merchants.

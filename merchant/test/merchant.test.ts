@@ -2,9 +2,11 @@ import type { PaymentPayload, PaymentRequired } from "@x402/core/types";
 import { describe, expect, it } from "vitest";
 import { SHOPS } from "../src/catalog.ts";
 import { createSimulatedFacilitator } from "../src/facilitator.ts";
+import { DATADASH } from "../src/deceptive.ts";
 import { BURN_ADDRESS } from "../src/megadeals.ts";
 import { createMerchant, loadMerchantConfig, type MerchantConfig } from "../src/server.ts";
-import { rideQuote } from "../src/shop.ts";
+import { payerOf, rideQuote } from "../src/shop.ts";
+import { scanDocument } from "../../src/injection.ts";
 
 const PAY_TO = "0x706F739AE390375A1Df4046879a47DC2D46389cc";
 const PAYER = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
@@ -92,6 +94,28 @@ describe("paid purchases", () => {
     expect(String(order.orderId)).toMatch(/^ord_/);
     expect(facilitator.settlements).toHaveLength(1);
     expect(facilitator.settlements[0]).toMatchObject({ transaction: expect.stringMatching(/^sim_/), payTo: PAY_TO, network: "eip155:2368" });
+    expect(order.paidBy).toBe(PAYER);
+  });
+
+  it("books a ride and names the wallet that paid", async () => {
+    const { app } = setup();
+    const required = await challenge(app, "/v1/ridemate/book", "POST");
+    expect(required.accepts[0]).toMatchObject({ amount: "50000000000000000" });
+    const response = await app.request(`${BASE}/v1/ridemate/book`, {
+      method: "POST",
+      headers: { "payment-signature": pay(required), "content-type": "application/json" },
+      body: JSON.stringify({ from: "Yaba", to: "Victoria Island", phone: "+2348012345678" }),
+    });
+    expect(response.status).toBe(200);
+    const booking = (await response.json()) as Record<string, unknown>;
+    expect(booking).toMatchObject({ status: "confirmed", pickup: "Yaba", dropoff: "Victoria Island", rider: "+234****678", paidBy: PAYER, fareNgn: rideQuote("Yaba", "Victoria Island").fareNgn });
+    expect(String(booking.bookingId)).toMatch(/^bk_/);
+  });
+
+  it("reads the payer only from a well-formed payment header", () => {
+    expect(payerOf(undefined)).toBeUndefined();
+    expect(payerOf("not base64 json")).toBeUndefined();
+    expect(payerOf(Buffer.from(JSON.stringify({ payload: { authorization: { from: "nope" } } })).toString("base64"))).toBeUndefined();
   });
 
   it("serves a paid ride quote over GET", async () => {
@@ -152,13 +176,13 @@ describe("discovery", () => {
     expect(catalog.shops.map((s) => s.id)).toEqual(["brightwave", "swiftbyte", "ridemate", "topup"]);
     expect(catalog.shops[0]?.products[0]).toMatchObject({ url: `${BASE}/v1/brightwave/data-1gb`, priceUsd: "0.30" });
     const wellKnown = (await (await app.request(`${BASE}/.well-known/x402`)).json()) as { resources: unknown[] };
-    expect(wellKnown.resources).toHaveLength(6);
+    expect(wellKnown.resources).toHaveLength(7);
   });
 
   it("reports readiness from the facilitator's supported networks", async () => {
     const { app } = setup();
     expect((await app.request(`${BASE}/readyz`)).status).toBe(200);
-    expect(await (await app.request(`${BASE}/healthz`)).json()).toMatchObject({ ok: true, network: "eip155:2368", products: 6, facilitator: "simulated" });
+    expect(await (await app.request(`${BASE}/healthz`)).json()).toMatchObject({ ok: true, network: "eip155:2368", products: 7, facilitator: "simulated" });
   });
 });
 
@@ -181,5 +205,26 @@ describe("MegaDeals, the deliberately malicious merchant", () => {
     const { app } = setup({ MERCHANT_PROFILE: "megadeals" });
     expect((await app.request(`${BASE}/v1/brightwave/data-1gb`, { method: "POST" })).status).toBe(404);
     expect(() => loadMerchantConfig({ PAY_TO, MERCHANT_PROFILE: "toString" })).toThrow(/MERCHANT_PROFILE/);
+  });
+});
+
+describe("the subtler deceptive merchants", () => {
+  it("DataDash steers buyers in words the pattern scanner does not catch", async () => {
+    const { app } = setup({ MERCHANT_PROFILE: "datadash" });
+    const catalog = (await (await app.request(`${BASE}/catalog`)).json()) as any;
+    expect(catalog).toMatchObject({ merchant: "DataDash", payTo: PAY_TO, notice: expect.stringContaining("Deliberately deceptive") });
+    expect(catalog.shops[0].description).toMatch(/automated buyers/);
+    // The point of the fixture: only a reading of the meaning flags it.
+    expect(scanDocument({ shops: DATADASH.shops })).toEqual([]);
+  });
+
+  it("QuickData lists one wallet, and its 402 asks the listed price but pays the burn address", async () => {
+    const { app } = setup({ MERCHANT_PROFILE: "quickdata" });
+    const catalog = (await (await app.request(`${BASE}/catalog`)).json()) as any;
+    expect(catalog).toMatchObject({ merchant: "QuickData", payTo: PAY_TO });
+    expect(catalog.shops[0].products[0]).toMatchObject({ id: "data-1gb", priceUsd: "0.28" });
+    expect(scanDocument({ shops: catalog.shops })).toEqual([]);
+    const required = await challenge(app, "/v1/quickdata/data-1gb", "POST");
+    expect(required.accepts[0]).toMatchObject({ amount: "280000000000000000", payTo: BURN_ADDRESS, network: "eip155:2368" });
   });
 });

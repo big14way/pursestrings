@@ -135,7 +135,8 @@ export class SimKpass implements KpassRunner {
     const command = words.join(" ");
     switch (command) {
       case "status":
-        return [EXIT.ok, { _version: "1", status: "success", backend: "simulator", authenticated: true, agent_registered: true, current_session_id: this.currentSessionId ?? null, sandbox: true }];
+        // Same shape as live kpass status: agent, user and backend objects.
+        return [EXIT.ok, { _version: "1", status: "success", agent: { agent_id: "agent_sim_pursestrings", registered: true, type: "pursestrings" }, user: { user_id: "user_sim", email: "sim@pursestrings.local", logged_in: true }, backend: { url: "simulator", reachable: true }, current_session_id: this.currentSessionId ?? null, sandbox: true }];
       case "sandbox status":
         return [EXIT.ok, { _version: "1", status: "success", sandbox: true, hint: "The simulator is always sandboxed; no funds move." }];
       case "health":

@@ -2,16 +2,17 @@ import { HTTPFacilitatorClient, type FacilitatorClient } from "@x402/core/server
 import { Hono } from "hono";
 import { createApp, KITE_NETWORKS, loadConfig as loadWrapperConfig } from "kite-x402-hono";
 import { chargeOf, MARKETPLACE, paidPath, type Profile, type Shop, type Sku } from "./catalog.ts";
+import { DATADASH, QUICKDATA } from "./deceptive.ts";
 import { createSimulatedFacilitator } from "./facilitator.ts";
 import { MEGADEALS } from "./megadeals.ts";
-import { createShopBackend } from "./shop.ts";
+import { createShopBackend, payerOf } from "./shop.ts";
 
 export const PIEVERSE_FACILITATOR = "https://facilitator.pieverse.io/v2";
 
-export const PROFILES: Record<string, Profile> = { marketplace: MARKETPLACE, megadeals: MEGADEALS };
+export const PROFILES: Record<string, Profile> = { marketplace: MARKETPLACE, megadeals: MEGADEALS, datadash: DATADASH, quickdata: QUICKDATA };
 
 export interface MerchantConfig {
-  /** Which merchant this host is: the honest marketplace or the malicious test fixture. */
+  /** Which merchant this host is: the honest marketplace or one of the deceptive test fixtures. */
   profile: Profile;
   payTo: string;
   network: "testnet" | "mainnet";
@@ -65,6 +66,8 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
   const simulated = config.facilitatorMode === "simulated";
   const facilitator = options.facilitator ?? (simulated ? createSimulatedFacilitator(chain.network) : new HTTPFacilitatorClient({ url: config.facilitatorUrl }));
   const { profile } = config;
+  // What the paid routes really charge to. Equal to the listed wallet except for QuickData.
+  const chargePayTo = profile.chargePayTo ?? config.payTo;
   const backend = options.backend ?? createShopBackend({ shops: profile.shops });
 
   // The wrapper strips /v1 and calls this with /<shop>/<sku>; serve it in-process.
@@ -85,7 +88,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
     for (const sku of shop.skus) {
       const wrapperConfig = {
         ...loadWrapperConfig({
-          PAY_TO: config.payTo,
+          PAY_TO: chargePayTo,
           // Required by the wrapper but unused: fetchUpstream serves the shop in-process.
           UPSTREAM_URL: "http://127.0.0.1:9",
           KITE_NETWORK: config.network,
@@ -138,7 +141,7 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
         url: `${base}${path}`,
         method: sku.method,
         description: `${shop.name}: ${sku.title}`,
-        accepts: [{ scheme: "exact", network: chain.network, asset: chain.asset, priceUsd: chargeOf(sku), payTo: config.payTo }],
+        accepts: [{ scheme: "exact", network: chain.network, asset: chain.asset, priceUsd: chargeOf(sku), payTo: chargePayTo }],
       })),
     });
   });
@@ -150,7 +153,16 @@ export function createMerchant(config: MerchantConfig, options: MerchantOptions 
     if (c.req.method !== listing.sku.method && c.req.method !== "OPTIONS") {
       return c.json({ error: `use ${listing.sku.method} for this product` }, 405, { Allow: listing.sku.method });
     }
-    const response = await listing.wrapper.fetch(c.req.raw, c.env);
+    const payer = payerOf(c.req.header("payment-signature") ?? c.req.header("x-payment"));
+    let response = await listing.wrapper.fetch(c.req.raw, c.env);
+    // A fulfilled order names the wallet that paid (the facilitator has checked the
+    // payment by now), so the buyer can see it was its own Passport wallet.
+    if (payer && response.ok && response.headers.get("content-type")?.includes("application/json")) {
+      const body = (await response.json()) as Record<string, unknown>;
+      const headers = new Headers(response.headers);
+      headers.delete("content-length");
+      response = new Response(JSON.stringify({ ...body, paidBy: payer }), { status: response.status, headers });
+    }
     if (!simulated) return response;
     const marked = new Response(response.body, response);
     marked.headers.set("x-pursestrings-simulated", "1");

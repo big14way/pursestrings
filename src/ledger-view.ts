@@ -56,6 +56,14 @@ export function listRuns(entries: LedgerEntry[]): RunListing[] {
   return listings.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
+function hostOf(source: string): string {
+  try {
+    return new URL(source).host;
+  } catch {
+    return source;
+  }
+}
+
 function when(iso: string): string {
   return iso.replace("T", " ").replace(/:\d\d(\.\d+)?Z$/, " UTC");
 }
@@ -75,9 +83,11 @@ export function renderRunList(listings: RunListing[], limit = 20): string {
 export function renderRun(list: LedgerEntry[]): string {
   if (list.length === 0) return "No such run in the ledger.";
   const runId = list[0]!.runId;
+  const identity = list.find((e) => e.kind === "identity");
   const discover = list.find((e) => e.kind === "discover");
   const plan = list.find((e) => e.kind === "plan");
-  const session = list.find((e) => e.kind === "session");
+  const sessions = list.filter((e) => e.kind === "session");
+  const session = sessions[0];
   const redteam = list.find((e) => e.kind === "redteam");
   const run = list.findLast((e) => e.kind === "run");
   const traces: string[] = [];
@@ -85,6 +95,7 @@ export function renderRun(list: LedgerEntry[]): string {
 
   lines.push(rule, `Run ${runId}   ${when(list[0]!.at)}${session ? `   Passport: ${str(session.mode)}` : ""}${plan ? `   SERV: ${str(obj(plan.serv).mode)}` : ""}`);
   lines.push(`Task: ${str(plan?.task, str(discover?.task, "?"))}`);
+  if (identity?.agentId) lines.push(`Agent ${str(identity.agentId)}${identity.agentType ? ` (${str(identity.agentType)})` : ""}${identity.userId ? `, owned by ${str(identity.userId)}` : ""}`);
 
   if (discover) {
     lines.push("", "Merchants");
@@ -96,10 +107,12 @@ export function renderRun(list: LedgerEntry[]): string {
           return str(m.source);
         }
       })();
-      if (m.status === "ok") lines.push(`  ✓ ${str(m.merchant)} (${host}): ${str(m.products)} products`);
+      const screen = obj(m.screen);
+      if (screen.requestId) traces.push(`${str(screen.requestId)} (screen ${str(m.merchant)})`);
+      if (m.status === "ok") lines.push(`  ✓ ${str(m.merchant)} (${host}): ${str(m.products)} product${m.products === 1 ? "" : "s"}${screen.verdict ? `, SERV screen ${str(screen.verdict)}` : ""}`);
       else if (m.status === "unreachable") lines.push(`  - ${host}: unreachable (${str(m.error)})`);
       else {
-        lines.push(`  ⚠ ${str(m.merchant)} (${host}): quarantined for prompt injection`);
+        lines.push(`  ⚠ ${str(m.merchant)} (${host}): quarantined by the ${str(m.detectedBy, "pattern scan")}${m.guardBlocked ? " (serv_prompt_guard blocked it)" : ""}`);
         const first = obj(arr(m.findings)[0]);
         if (first.excerpt) lines.push(`      "${str(first.excerpt)}"`);
         if (m.explanation) lines.push(`      ${str(m.explanation)}`);
@@ -118,10 +131,13 @@ export function renderRun(list: LedgerEntry[]): string {
   }
 
   if (session) {
-    const policy = obj(obj(session.delegation).payment_policy);
-    const endpoints = arr(obj(obj(obj(session.delegation).execution_constraints).x402).allowed_endpoints).length;
-    const minutes = Math.round(Number(policy.ttl_seconds ?? 0) / 60);
-    lines.push("", "Limits approved with your passkey", `  session ${str(session.sessionId)}: $${str(policy.max_amount_per_tx)} per payment, $${str(policy.max_total_amount)} in total, ${minutes} min, ${endpoints} endpoint${endpoints === 1 ? "" : "s"}`);
+    lines.push("", "Limits approved with your passkey");
+    for (const s of sessions) {
+      const policy = obj(obj(s.delegation).payment_policy);
+      const endpoints = arr(obj(obj(obj(s.delegation).execution_constraints).x402).allowed_endpoints).length;
+      const minutes = Math.round(Number(policy.ttl_seconds ?? 0) / 60);
+      lines.push(`  session ${str(s.sessionId)}: $${str(policy.max_amount_per_tx)} per payment, $${str(policy.max_total_amount)} in total, ${minutes} min, ${endpoints} endpoint${endpoints === 1 ? "" : "s"}${s.replaces ? `, for a stand-in after ${hostOf(str(s.replaces))} was refused` : ""}`);
+    }
   } else if (plan) {
     lines.push("", "No spending session was approved.");
   }
@@ -147,12 +163,14 @@ export function renderRun(list: LedgerEntry[]): string {
         const tx = str(r.transaction);
         lines.push(`  ✓ $${str(e.priceUsd)}  ${str(e.merchant)}: ${str(e.item)}`);
         if (tx) lines.push(`      ${r.simulated ? "simulated " : ""}tx ${tx}${r.network ? ` on ${str(r.network)}` : ""}`);
+        if (r.paidBy) lines.push(`      receipt: paid by ${str(r.paidBy)}`);
         const link = explorerTxUrl(chainId, tx);
         if (link) lines.push(`      ${link}`);
         if (e.why) lines.push(`      why: ${str(e.why)}`);
       } else {
         lines.push(`  ✗ $${str(e.priceUsd)}  ${str(e.merchant)}: ${str(e.item)}  refused by ${str(e.refusedBy)} (${str(e.code)})`);
         lines.push(`      ${str(e.explanation)}`);
+        if (e.note) lines.push(`      ${str(e.note)}`);
         if (e.explanationId) traces.push(`${str(e.explanationId)} (refusal)`);
       }
     }
@@ -162,7 +180,10 @@ export function renderRun(list: LedgerEntry[]): string {
   if (run?.stopped) lines.push(`Stopped: ${str(run.stopped)}. Spent $${str(run.spentUsd, "0.00")}.`);
   else if (run) {
     const approved = session ? str(obj(obj(session.delegation).payment_policy).max_total_amount) : "0";
-    lines.push(`Spent $${str(run.spentUsd)} of $${approved} approved${plan ? ` (budget $${str(plan.budgetUsd)})` : ""}: ${str(run.paid)} paid, ${str(run.refused)} refused.`);
+    const approvedTotal = sessions.reduce((acc, s) => acc + Number(str(obj(obj(s.delegation).payment_policy).max_total_amount, "0")), 0);
+    const approvedText = sessions.length > 1 ? approvedTotal.toFixed(2) : approved;
+    lines.push(`Spent $${str(run.spentUsd)} of $${approvedText} approved${plan ? ` (budget $${str(plan.budgetUsd)})` : ""}: ${str(run.paid)} paid, ${str(run.refused)} refused.`);
+    if (run.feeUsd) lines.push(`PurseStrings fee at 0.5%: $${str(run.feeUsd)} (accrued, not charged on testnet).`);
   } else lines.push("This run did not finish (no closing ledger entry).");
   const live = traces.filter((t) => !t.startsWith("mock_"));
   if (live.length) lines.push(`SERV request ids (console.openserv.ai > Usage > Activity): ${live.join(", ")}`);

@@ -9,7 +9,8 @@
  * what any payment can be, whatever the agent was told.
  */
 
-export type InjectionKind = "override" | "addresses-agent" | "redirects-funds" | "secrecy";
+/** "steering" comes from the SERV screen (src/screen.ts); the others from the patterns below. */
+export type InjectionKind = "override" | "addresses-agent" | "redirects-funds" | "secrecy" | "steering";
 
 export interface InjectionFinding {
   kind: InjectionKind;
@@ -19,7 +20,7 @@ export interface InjectionFinding {
   excerpt: string;
 }
 
-const RULES: Array<{ kind: InjectionKind; pattern: RegExp }> = [
+const RULES: Array<{ kind: Exclude<InjectionKind, "steering">; pattern: RegExp }> = [
   {
     kind: "override",
     pattern: /\b(ignore|disregard|forget|override|bypass)\b.{0,40}?\b(previous|prior|above|earlier|all|any|your|system|spending)\b.{0,30}?\b(instructions?|rules?|prompts?|limits?|guidelines?|polic(?:y|ies))\b/i,
@@ -111,7 +112,7 @@ export function addressesIn(findings: InjectionFinding[]): string[] {
   return [...new Set(findings.flatMap((f) => f.excerpt.match(/0x[0-9a-fA-F]{40}/g) ?? []))];
 }
 
-const SEVERITY: InjectionKind[] = ["redirects-funds", "override", "secrecy", "addresses-agent"];
+const SEVERITY: InjectionKind[] = ["redirects-funds", "override", "secrecy", "steering", "addresses-agent"];
 
 /** The most telling finding first: redirected funds, then overrides. */
 export function rankFindings(findings: InjectionFinding[]): InjectionFinding[] {
@@ -123,4 +124,5 @@ export const KIND_LABEL: Record<InjectionKind, string> = {
   override: "tells the agent to ignore its rules",
   secrecy: "asks the agent to hide something from you",
   "addresses-agent": "addresses AI agents directly",
+  steering: "tries to steer the agent's choice",
 };

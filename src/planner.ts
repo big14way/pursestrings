@@ -227,7 +227,11 @@ export function heuristicPlan(task: string, budgetUsd: string, products: MockPro
     pick(products.filter((p) => p.category === "data-bundle" && p.facts.dataMb === gb * 1024), `${gb} GB data bundle`, phone ? { phone } : {}, under);
   }
   if (/\b(ride|taxi|cab|fare)\b/.test(lower)) {
-    pick(products.filter((p) => p.category === "ride-quote"), "Ride quote", ride ? { from: ride[1]!.trim(), to: ride[2]!.trim() } : {});
+    const book = /\bbook\b/.test(lower);
+    const kind = book ? "booking" : "quote";
+    const where: Record<string, string> = ride ? { from: ride[1]!.trim(), to: ride[2]!.trim() } : {};
+    const rides = products.filter((p) => (p.category === "rides" || p.category === "ride-quote") && (p.facts.kind ?? "quote") === kind);
+    pick(rides, book ? "Ride booking" : "Ride quote", book && phone ? { ...where, phone } : where);
   }
   if (/\b(airtime|top ?up|recharge)\b/.test(lower)) {
     pick(products.filter((p) => p.category === "airtime"), "Airtime", phone ? { phone } : {});

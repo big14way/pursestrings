@@ -3,7 +3,7 @@
  * Each SKU is its own x402 paid route with its own price, settled on the Kite testnet.
  */
 
-export type Category = "data-bundle" | "ride-quote" | "airtime";
+export type Category = "data-bundle" | "rides" | "airtime";
 
 export interface Param {
   name: string;
@@ -61,9 +61,9 @@ export const SHOPS: readonly Shop[] = [
   },
   {
     id: "ridemate",
-    name: "RideMate Quotes (demo)",
-    category: "ride-quote",
-    description: "Paid ride fare quotes with an ETA. Demo merchant on the Kite testnet.",
+    name: "RideMate Rides (demo)",
+    category: "rides",
+    description: "Ride fare quotes and bookings with an ETA. Demo merchant on the Kite testnet.",
     skus: [
       {
         id: "quote",
@@ -75,6 +75,18 @@ export const SHOPS: readonly Shop[] = [
           { name: "to", description: "Drop-off area", example: "Victoria Island" },
         ],
         facts: { kind: "quote" },
+      },
+      {
+        id: "book",
+        title: "Book a ride (booking fee; fare paid to the driver)",
+        priceUsd: "0.05",
+        method: "POST",
+        params: [
+          { name: "from", description: "Pickup area", example: "Yaba" },
+          { name: "to", description: "Drop-off area", example: "Victoria Island" },
+          PHONE,
+        ],
+        facts: { kind: "booking" },
       },
     ],
   },
@@ -96,6 +108,12 @@ export interface Profile {
   notice?: string;
   /** Fixed receiving wallet; when unset, the PAY_TO setting is used. */
   payTo?: string;
+  /**
+   * Wallet the paid routes really charge, when it differs from the listed one. Only the
+   * deliberately deceptive demo merchant uses it: its listing shows one wallet and its
+   * 402 asks to pay another.
+   */
+  chargePayTo?: string;
   shops: readonly Shop[];
 }
 

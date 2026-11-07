@@ -1,4 +1,4 @@
-import type { RedTeamOutcome, RunEvent, RunSummary } from "./executor.js";
+import type { AgentIdentity, RedTeamOutcome, RunEvent, RunSummary } from "./executor.js";
 import { KIND_LABEL } from "./injection.js";
 
 /** Terminal rendering of a run: merchants, the plan, the limits, every payment and refusal. */
@@ -31,16 +31,26 @@ export function renderRedTeam(o: RedTeamOutcome): string {
   return [`  ✗ ${o.refusedBy} refused: ${o.detail}${o.code ? ` (${o.code})` : ""}`, ...(o.explanation ? [`    ${o.explanation}`] : []), `    Nothing was paid to ${o.merchant}.`].join("\n");
 }
 
+export function renderIdentity(id: AgentIdentity): string {
+  if (!id.agentId) return `Agent: no Passport agent identity reported (${id.mode})`;
+  return `Agent ${id.agentId}${id.agentType ? ` (${id.agentType})` : ""}${id.userId ? `, owned by ${id.userId}` : ""}, on Kite Passport${id.mode === "sim" ? " (simulator)" : id.backend ? ` (${hostOf(id.backend)})` : ""}`;
+}
+
 export function renderEvent(event: RunEvent): string {
   switch (event.type) {
-    case "catalog":
-      return `• ${event.merchant} (${hostOf(event.source)}): ${event.products} products`;
+    case "identity":
+      return renderIdentity(event.identity);
+    case "catalog": {
+      const screen = event.screen;
+      const note = !screen ? "" : screen.verdict === "clean" ? `; SERV screen: clean${screen.requestId ? ` (${screen.requestId})` : ""}` : screen.verdict === "unavailable" ? `; SERV screen unavailable: ${screen.reason}` : "";
+      return `• ${event.merchant} (${hostOf(event.source)}): ${event.products} product${event.products === 1 ? "" : "s"}${note}`;
+    }
     case "catalog-error":
       return `• ${hostOf(event.source)}: unreachable, skipped (${event.error})`;
     case "quarantine": {
       const q = event.quarantine;
       const kinds = [...new Set(q.findings.map((f) => KIND_LABEL[f.kind]))].join("; ");
-      const lines = [`⚠ ${q.merchant} (${hostOf(q.source)}): QUARANTINED. Its listing ${kinds}.`];
+      const lines = [`⚠ ${q.merchant} (${hostOf(q.source)}): QUARANTINED by the ${q.detectedBy}${q.guardBlocked ? " (serv_prompt_guard blocked it)" : ""}. Its listing ${kinds}.`];
       for (const f of q.findings.slice(0, 3)) lines.push(`    "${f.excerpt}"`);
       lines.push(`    ${q.explanation}${q.explanationId ? ` (SERV trace ${q.explanationId})` : ""}`);
       return lines.join("\n");
@@ -86,10 +96,13 @@ export function renderEvent(event: RunEvent): string {
         const where = r ? [r.network ?? (r.chainId ? `chain ${r.chainId}` : undefined), r.transaction ? `tx ${r.transaction}` : undefined, r.simulated ? "simulated" : undefined].filter(Boolean).join(", ") : "";
         const link = explorerTxUrl(r?.chainId, r?.transaction);
         const delivered = describeResponse(o.response);
-        return `  ✓ ${o.explanation}${where ? `\n    ${where}` : ""}${link ? `\n    ${link}` : ""}${delivered ? `\n    delivered: ${delivered}` : ""}`;
+        const payer = r?.paidBy ? `\n    the merchant's receipt says it was paid by ${r.paidBy}` : "";
+        return `  ✓ ${o.explanation}${where ? `\n    ${where}` : ""}${link ? `\n    ${link}` : ""}${delivered ? `\n    delivered: ${delivered}` : ""}${payer}`;
       }
-      return `  ✗ ${o.explanation}${o.code ? `\n    code ${o.code}${o.explanationId ? `, SERV trace ${o.explanationId}` : ""}` : ""}`;
+      return `  ✗ ${o.explanation}${o.note ? `\n    ${o.note}` : ""}${o.code ? `\n    code ${o.code}${o.explanationId ? `, SERV trace ${o.explanationId}` : ""}` : ""}`;
     }
+    case "fallback":
+      return `↻ ${event.alternative.product.shopName} sells the same ${event.alternative.product.title} for $${event.alternative.product.priceUsd}. It needs its own limit:`;
     case "stopped":
       return `Stopped: ${event.reason}`;
   }
@@ -100,6 +113,7 @@ export function describeResponse(response: unknown): string | undefined {
   if (!response || typeof response !== "object") return undefined;
   const r = response as Record<string, unknown>;
   if (typeof r.orderId === "string") return `order ${r.orderId}${typeof r.status === "string" ? ` (${r.status})` : ""}`;
+  if (typeof r.bookingId === "string") return `ride booked ${r.bookingId}: ${r.pickup} → ${r.dropoff}, driver ${r.driverEtaMinutes} min away, fare NGN ${r.fareNgn} to the driver`;
   const quote = r.quote as Record<string, unknown> | undefined;
   if (quote && typeof quote === "object") return `quote ${quote.from} → ${quote.to}: NGN ${quote.fareNgn}, ${quote.etaMinutes} min away`;
   return undefined;
@@ -112,6 +126,7 @@ export function renderSummary(summary: RunSummary, ledgerPath: string): string {
   return [
     rule,
     `Run ${summary.runId}: ${paid} paid, ${refused} refused, $${summary.spentUsd} spent${extra.length ? `; ${extra.join("; ")}` : ""}.`,
+    `PurseStrings fee at 0.5%: $${summary.feeUsd} (accrued in the ledger, not charged on testnet).`,
     `Ledger: ${ledgerPath}   View it: pursestrings ledger ${summary.runId}`,
   ].join("\n");
 }
