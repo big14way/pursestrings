@@ -62,6 +62,22 @@ export class KpassError extends Error {
   get isPolicyRefusal(): boolean {
     return this.info.kind === "policy";
   }
+
+  /** The message without kpass's trailing key="value" list, keeping the reason. */
+  get plainMessage(): string {
+    return plainMessage(this.message);
+  }
+}
+
+/**
+ * kpass refusals end with a list like (url="…", host="…", reason="host_not_in_executable_catalog").
+ * The sentence and the reason are what a person needs; the URL is in the ledger already.
+ */
+export function plainMessage(message: string): string {
+  const m = /^(.*?)\s*\(((?:\s*[\w-]+="[^"]*"\s*,?)+)\)\s*\.?\s*$/s.exec(message);
+  if (!m?.[1]) return message;
+  const reason = /\breason="([^"]*)"/.exec(m[2] ?? "")?.[1];
+  return reason ? `${m[1]} (${reason})` : m[1];
 }
 
 export function describeError(code: string): ErrorInfo {

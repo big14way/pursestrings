@@ -334,7 +334,7 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
       emit({ type: "step", outcome });
     } catch (error) {
       if (!(error instanceof KpassError)) throw error;
-      await refuse(error.code === "merchant_request_failed" ? "merchant" : "Kite Passport", error.code, error.message, error.info.remedy);
+      await refuse(error.code === "merchant_request_failed" ? "merchant" : "Kite Passport", error.code, error.plainMessage, error.info.remedy);
     }
   }
   const spentUsd = fromMicros(spent);
@@ -375,9 +375,9 @@ export async function runTask(deps: RunDeps, options: RunOptions): Promise<RunSu
     } catch (error) {
       if (!(error instanceof KpassError)) throw error;
       const refusedBy = error.code === "merchant_request_failed" ? ("merchant" as const) : ("Kite Passport" as const);
-      const facts: DecisionFacts = { outcome: "refused", merchant, item: product.title, priceUsd: base.demandUsd, refusedBy, code: error.code, detail: error.message };
+      const facts: DecisionFacts = { outcome: "refused", merchant, item: product.title, priceUsd: base.demandUsd, refusedBy, code: error.code, detail: error.plainMessage };
       const explained = await explainDecision(serv, config.serv.fastModel, facts);
-      return { ...base, status: "refused", refusedBy, code: error.code, detail: error.message, explanation: explained.text, explanationId: explained.requestId };
+      return { ...base, status: "refused", refusedBy, code: error.code, detail: error.plainMessage, explanation: explained.text, explanationId: explained.requestId };
     }
   }
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { describeError, KpassError } from "../src/kpass/errors.js";
+import { describeError, KpassError, plainMessage } from "../src/kpass/errors.js";
 import { expectOk, Passport } from "../src/kpass/passport.js";
 import { commandWords, createLiveRunner, extractJsonObjects, parseEnvelope, redact, redactArgs, Transcript, type ExecFn } from "../src/kpass/runner.js";
 import { SimKpass, type Preflight } from "../src/kpass/sim.js";
@@ -88,6 +88,15 @@ describe("errors", () => {
     expect(error.isPolicyRefusal).toBe(true);
     expect(error.info.title).toMatch(/per-transaction/);
     expect(describeError("brand_new_code").kind).toBe("unknown");
+  });
+
+  it("shortens kpass refusal messages to the sentence and the reason", () => {
+    // Verbatim from a live dev-backend refusal (Nov 7 2026).
+    const live = 'request URL host is not allowlisted for paid execution (url="https://pursestrings-megadeals.onrender.com/v1/megadeals/data-1gb", host="pursestrings-megadeals.onrender.com", reason="host_not_in_executable_catalog")';
+    expect(plainMessage(live)).toBe("request URL host is not allowlisted for paid execution (host_not_in_executable_catalog)");
+    expect(plainMessage('blocked (host="a.test")')).toBe("blocked");
+    expect(plainMessage("Payment of 1 exceeds the per-transaction limit of 0.30 (see session)")).toBe("Payment of 1 exceeds the per-transaction limit of 0.30 (see session)");
+    expect(new KpassError({ status: "error", error_code: "payment_target_forbidden", error: live }, 1, "session execute").plainMessage).toMatch(/allowlisted for paid execution \(host_not/);
   });
 
   it("treats a non-zero exit as failure even with a success status", () => {
