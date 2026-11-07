@@ -29,4 +29,10 @@ describe("ledger chain", () => {
     expect(verifyChain([...lines, lines[0]!])).toMatchObject({ ok: false, brokenAt: 3, reason: expect.stringMatching(/without a hash/) });
     expect(verifyChain([...lines, "{not json"])).toMatchObject({ ok: false, brokenAt: 3 });
   });
+
+  it("keeps one chain when runs append concurrently", async () => {
+    const ledger = new Ledger(join(mkdtempSync(join(tmpdir(), "ps-ledger-")), "ledger.jsonl"));
+    await Promise.all(Array.from({ length: 20 }, (_, i) => ledger.append(`r${i % 3}`, "plan", { i })));
+    expect(await ledger.verify()).toMatchObject({ ok: true, chained: 20 });
+  });
 });

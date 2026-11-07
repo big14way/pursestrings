@@ -79,6 +79,8 @@ export function verifyChain(lines: string[]): ChainReport {
 export class Ledger {
   readonly path: string;
   private last: string | undefined | null = null;
+  /** Appends run one at a time, so concurrent runs sharing a ledger keep one unbroken chain. */
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(path: string) {
     this.path = path;
@@ -107,7 +109,13 @@ export class Ledger {
     return (this.last = undefined);
   }
 
-  async append(runId: string, kind: LedgerKind, data: Record<string, unknown>): Promise<LedgerEntry> {
+  append(runId: string, kind: LedgerKind, data: Record<string, unknown>): Promise<LedgerEntry> {
+    const next = this.queue.then(() => this.write(runId, kind, data));
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+
+  private async write(runId: string, kind: LedgerKind, data: Record<string, unknown>): Promise<LedgerEntry> {
     const { prev: _p, hash: _h, ...clean } = data;
     const body: EntryBody = { runId, at: new Date().toISOString(), kind, ...clean, prev: (await this.head()) ?? GENESIS };
     const entry: LedgerEntry = { ...body, hash: entryHash(body) };

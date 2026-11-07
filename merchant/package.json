@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=../.env src/main.ts",
-    "dev": "node --env-file-if-exists=../.env --watch src/main.ts"
+    "dev": "node --env-file-if-exists=../.env --watch src/main.ts",
+    "demo": "node --env-file-if-exists=../.env src/demo/main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

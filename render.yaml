@@ -81,3 +81,16 @@ services:
         value: testnet
       - key: FACILITATOR_URL
         value: https://facilitator.pieverse.io/v2
+
+  # The hosted demo page: runs the agent against in-process copies of the four
+  # merchants (simulated facilitator, Passport simulator, SERV mock). No funds move.
+  - type: web
+    name: pursestrings-demo
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run demo -w merchant
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"

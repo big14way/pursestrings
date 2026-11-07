@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PurseStrings · Your agent shops. You hold the purse strings.</title>
+<meta name="description" content="A shopping agent that pays merchants inside limits you approve with a passkey. SERV Reasoning screens and explains; Kite Passport caps how much; PurseStrings checks who gets paid.">
+<link rel="icon" href="/mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script>
+  try { const t = localStorage.getItem("ps-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="/mark.svg" alt="">PurseStrings</a>
+    <div class="navlinks">
+      <a href="#demo"><span>[D]</span> Demo</a>
+      <a href="#attacks"><span>[A]</span> Attacks</a>
+      <a href="#how"><span>[H]</span> How it works</a>
+      <a href="#ledger"><span>[L]</span> Ledger</a>
+      <a href="https://github.com/big14way/pursestrings"><span>[G]</span> GitHub</a>
+    </div>
+    <div class="navright">
+      <a class="btn primary small" href="#demo">Run the demo</a>
+      <button class="icon-btn" id="theme" aria-label="Switch light or dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <h1>Your agent shops.<br>You hold the purse strings.</h1>
+    <p class="lead">A shopping agent that pays merchants by itself, inside limits you approve once with a passkey. SERV Reasoning screens and explains every decision; Kite Passport caps how much it can spend; PurseStrings checks who gets paid.</p>
+    <div class="actions">
+      <a class="btn primary" href="#demo">Run the demo</a>
+      <a class="btn" href="https://github.com/big14way/pursestrings">View on GitHub</a>
+    </div>
+    <div class="sandbox-line">Sandbox: Kite Passport simulator · SERV <span id="serv-mode">mock</span> · demo merchants · no funds move</div>
+  </div>
+</header>
+
+<section style="border-top:0;padding-top:24px">
+  <div class="wrap showcase">
+    <div class="callouts left">
+      <div class="callout"><div class="eyebrow">Identity</div><p>A Kite Passport agent with an owner. Every session and payment belongs to it.</p></div>
+      <div class="callout"><div class="eyebrow">Checks</div><p>Listings screened before planning; every payment request checked against its listing.</p></div>
+    </div>
+    <div class="card agent-card" id="agent-card">
+      <div class="head">
+        <div class="who"><img src="/mark.svg" alt=""><h3>Shopping agent</h3></div>
+        <div class="owner"><div class="eyebrow">Owner</div><div id="ac-owner">user_sim</div></div>
+      </div>
+      <div class="budget">
+        <div class="row"><span>Spent</span><span id="ac-spent">$0.35 of $1.00 budget</span></div>
+        <div class="bar"><i id="ac-bar" style="width:35%"></i></div>
+      </div>
+      <ul class="checklist" id="ac-checks"></ul>
+      <hr>
+      <div class="mini-label">Merchants</div>
+      <div class="mini-rows" id="ac-merchants"></div>
+      <hr>
+      <div class="mini-label">Audit trail</div>
+      <div class="mini-rows" id="ac-audit"></div>
+    </div>
+    <div class="callouts right">
+      <div class="callout"><div class="eyebrow">Policy</div><p>Limits you approve with a passkey: per payment, in total, for an hour.</p></div>
+      <div class="callout"><div class="eyebrow">Audit trail</div><p>Every decision hash-chained, with the SERV request that explained it.</p></div>
+    </div>
+  </div>
+  <p class="wrap faint mono" style="text-align:center;font-size:11px;margin-top:22px" id="ac-source">From the recorded run with SERV live. Run the demo to fill it with yours.</p>
+</section>
+
+<section id="demo">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">01 · Live demo</div>
+      <h2>Run it. Approve it. Watch it refuse.</h2>
+      <p class="lead">Four merchants: one honest, three deliberately deceptive. You approve the spending limits yourself, as you would with your passkey.</p>
+    </div>
+    <div class="console">
+      <div class="card panel">
+        <label><span class="eyebrow">Task</span>
+          <textarea id="task" maxlength="240"></textarea>
+        </label>
+        <div class="eyebrow" style="margin-top:18px">Merchants</div>
+        <div class="merchant-list" id="merchants"></div>
+        <label class="switch"><span>Red team: try the attack with PurseStrings' checks off</span><input type="checkbox" id="redteam" checked></label>
+        <button class="btn primary run" id="run">Run the demo</button>
+        <button class="btn run" id="replay" style="margin-top:8px">Replay a live SERV run</button>
+        <div class="note">Kite Passport simulator · SERV <span class="serv-mode">mock</span> · merchants run in a sandbox · no funds move</div>
+      </div>
+      <div class="feed" id="feed">
+        <div class="empty">
+          <h3>Press Run to start.</h3>
+          <p>The agent will screen the merchants, plan with SERV, and ask you to approve its limits.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="attacks">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">02 · Attacks</div>
+      <h2>Three traps. Three different layers.</h2>
+      <p class="lead">Each deceptive merchant is live on Kite testnet, labelled in its catalog, and pays out (if anything) to the burn address.</p>
+    </div>
+    <div class="attacks" id="attack-cards"></div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">03 · How it works</div>
+      <h2>Passport caps how much.<br>PurseStrings checks to whom.</h2>
+      <p class="lead">Merchant pages are written by merchants, so PurseStrings treats them as data and never relies on one defence.</p>
+    </div>
+    <div class="layers">
+      <div class="layer"><div class="eyebrow">01 · Pattern scan</div><h3>Reads the words</h3><p>Every string in a listing is checked for text that addresses agents, overrides their rules, redirects funds or asks for secrecy.</p></div>
+      <div class="layer"><div class="eyebrow">02 · SERV screen</div><h3>Reads the meaning</h3><p>SERV Reasoning reads each listing that passed for steering aimed at automated buyers. Its prompt guard blocking a listing quarantines the merchant.</p></div>
+      <div class="layer"><div class="eyebrow">03 · Code checks</div><h3>Checks every payment</h3><p>The live x402 request must match the listing: network, token, price and the wallet being paid. A refused item can be bought elsewhere under a new limit.</p></div>
+      <div class="layer"><div class="eyebrow">04 · Kite Passport</div><h3>Caps the session</h3><p>A session you approve with a passkey: a cap per payment, a total and an expiry. Even a fully fooled agent cannot spend past it.</p></div>
+    </div>
+    <div class="serv-note">
+      <div class="card"><div class="eyebrow">SERV · Planner</div><p>Plans on <code>claude-sonnet-5-serv-kronos</code> with <code>serv_prompt_guard</code> and <code>serv_shadow_agent</code>. The model may only name catalog ids; code validates the plan.</p></div>
+      <div class="card"><div class="eyebrow">SERV · Screen</div><p>In live runs SERV's guard refused DataDash's listing outright, the subtle one the pattern scan passes. The console counts it as a threat stopped.</p></div>
+      <div class="card"><div class="eyebrow">SERV · Explanations</div><p>Every quarantine and refusal gets one sentence naming who decided. Each request id is in the ledger and in SERV's activity log.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="ledger">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">04 · Ledger</div>
+      <h2>Every decision, hash-chained.</h2>
+      <p class="lead">Each entry carries the hash of the one before it. Edit, delete or reorder anything, and <code>ledger verify</code> names the line.</p>
+    </div>
+    <div class="chain-pill" id="chain-pill"><span class="spinner"></span> Checking this demo's ledger…</div>
+    <div class="ledger-wrap" style="margin-top:22px">
+      <div class="mini-label" style="padding:12px 12px 0" id="recorded-label">Recorded run · SERV live</div>
+      <table class="ledger-table" id="recorded"></table>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap">
+    <div class="eyebrow">Try it in your terminal</div>
+    <h2>One command. No account.</h2>
+    <div class="cmd"><code id="cmd">npx github:big14way/pursestrings run --demo</code><button class="btn small" id="copy">Copy</button></div>
+    <div class="links">
+      <a href="https://github.com/big14way/pursestrings">GitHub</a>
+      <a href="https://x.com/Big14teru/status/2119170763039080843">Demo video on X</a>
+      <a href="https://pursestrings-merchant.onrender.com/catalog">Live merchant catalog</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>PurseStrings · SERV Reasoning · Kite Agent Passport · x402 on Kite testnet</span>
+    <span>Demo merchants are fictional. Nothing in the sandbox moves funds.</span>
+  </div>
+</footer>
+
+<div class="drawer-bg" id="drawer-bg"></div>
+<aside class="drawer" id="drawer" aria-label="Run ledger">
+  <header><div><div class="eyebrow">Ledger</div><h3 id="drawer-title">This run</h3></div><button class="btn small" id="drawer-close">Close</button></header>
+  <div class="content" id="drawer-content"></div>
+</aside>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

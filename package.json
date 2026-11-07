@@ -19,12 +19,13 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json && tsc -p merchant/tsconfig.json",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build",
+    "check": "npm run build && npm run typecheck && npm run test",
     "dev": "tsx src/cli.ts",
     "doctor": "tsx src/cli.ts doctor",
     "merchant": "npm start -w merchant",
     "merchant:sim": "MERCHANT_FACILITATOR=simulated MERCHANT_PROFILE=marketplace,megadeals,datadash,quickdata MERCHANT_PAY_TO=${MERCHANT_PAY_TO:-0x706F739AE390375A1Df4046879a47DC2D46389cc} npm start -w merchant",
-    "prepare": "node scripts/prepare.mjs"
+    "prepare": "node scripts/prepare.mjs",
+    "demo": "npm run build && npm run demo -w merchant"
   },
   "dependencies": {
     "openai": "^7.53.0"
