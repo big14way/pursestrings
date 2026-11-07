@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { fromMicros, toMicros } from "../money.js";
 import type { KpassResult, KpassRunner, Transcript } from "./runner.js";
 import type { AllowedEndpoint, Delegation, KpassEnvelope, SessionRecord } from "./types.js";
 
@@ -16,8 +17,13 @@ export interface PreflightResult {
   asset?: string;
   /** CAIP-2 network the merchant advertises, e.g. eip155:2368. */
   network?: string;
-  /** Body the merchant returns once paid. */
+  /** Body the merchant returns once paid, when known up front. */
   paidBody?: unknown;
+  /**
+   * Completes the purchase after the caps pass, e.g. against a merchant running the
+   * simulated facilitator. Never called for a refused payment.
+   */
+  pay?: () => Promise<{ status: number; body: unknown }>;
 }
 
 export type Preflight = (request: { url: string; method: string; headers?: Record<string, string>; body?: string }) => Promise<PreflightResult>;
@@ -45,20 +51,6 @@ interface SimSession extends SessionRecord {
 }
 
 const EXIT = { ok: 0, usage: 2, auth: 3, allowance: 4, policy: 6 } as const;
-
-/** Atomic units of a 6-decimal stablecoin, so cap arithmetic is exact. */
-function toMicros(amount: string): bigint {
-  const value = amount.trim().replace(/^\$/, "");
-  if (!/^\d+(\.\d+)?$/.test(value)) throw new Error(`not a decimal amount: ${amount}`);
-  const [whole = "0", frac = ""] = value.split(".");
-  return BigInt(whole) * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
-}
-
-function fromMicros(micros: bigint): string {
-  const whole = micros / 1_000_000n;
-  const frac = (micros % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : `${whole}.00`;
-}
 
 export function endpointMatches(endpoint: AllowedEndpoint, method: string, url: URL): boolean {
   return endpoint.method.toUpperCase() === method.toUpperCase() && endpoint.host.toLowerCase() === url.host.toLowerCase() && url.pathname.startsWith(endpoint.path_prefix);
@@ -102,7 +94,10 @@ export class SimKpass implements KpassRunner {
   private readonly now: () => number;
   private counter = 0;
 
-  constructor(private readonly options: SimOptions = {}) {
+  private readonly options: SimOptions;
+
+  constructor(options: SimOptions = {}) {
+    this.options = options;
     this.now = options.now ?? Date.now;
   }
 
@@ -263,12 +258,21 @@ export class SimKpass implements KpassRunner {
     if (policy.max_total_amount && spent + price > toMicros(policy.max_total_amount)) {
       return [EXIT.policy, { _version: "1", status: "error", error: `Payment of ${preflight.price} would take total spend past the budget of ${policy.max_total_amount}.`, error_code: "session_total_exceeded" }];
     }
+    let paid: { status: number; body: unknown } | undefined;
+    if (preflight.pay) {
+      paid = await preflight.pay();
+      if (paid.status < 200 || paid.status >= 300) {
+        // Like a real merchant failure before settlement: nothing is charged.
+        return [1, { _version: "1", status: "error", error: `Merchant answered HTTP ${paid.status}; nothing was charged.`, error_code: "merchant_request_failed", details: { body: paid.body } }];
+      }
+    }
     session.spent = spent + price;
     session.usage = { spent_total: fromMicros(spent + price), reserved_total: "0.00" };
     const network = preflight.network ?? this.options.defaultNetwork;
     const opKey = typeof key === "string" ? key : randomUUID();
-    const txHash = `0x${createHash("sha256").update(`${session.id}:${opKey}`).digest("hex")}`;
-    const responseBody = preflight.paidBody === undefined ? { simulated: true } : preflight.paidBody;
+    // Labelled sim_ so it can never be mistaken for an on-chain transaction.
+    const txHash = `sim_${createHash("sha256").update(`${session.id}:${opKey}`).digest("hex").slice(0, 32)}`;
+    const responseBody = paid?.body ?? (preflight.paidBody === undefined ? { simulated: true } : preflight.paidBody);
     const envelope: KpassEnvelope = {
       _version: "1",
       status: "success",

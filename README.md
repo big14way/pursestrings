@@ -33,6 +33,23 @@ To go live:
 
 `doctor` writes its report and every kpass exchange to `.pursestrings/` (git-ignored) so runs can be audited and replayed.
 
+## Run the agent
+
+```bash
+npm run build
+node dist/cli.js run "Get me the cheapest 1GB data bundle under \$0.50 for +2348012345678 and a ride quote from Yaba to Victoria Island"
+```
+
+What happens:
+
+1. **Discover.** PurseStrings reads each merchant's free `/catalog`. Only those merchants can ever be paid.
+2. **Plan.** SERV Reasoning (`claude-sonnet-5-serv-kronos`, with `serv_prompt_guard` and `serv_shadow_agent`) picks catalog products and explains why. The model only names product ids: URLs, methods and prices come from the catalog, and the plan is validated in code (known products, declared inputs, within budget).
+3. **Bound.** Kite Passport is asked for a separate spending session capped at the plan: largest single payment, plan total, one hour, scoped to the chosen endpoints. You approve it with your passkey.
+4. **Pay.** Before each payment PurseStrings checks its own allowlist and caps and re-reads the merchant's live 402 challenge, refusing if the price, network or token changed. Then Passport pays over x402.
+5. **Explain.** Every payment and refusal gets one plain sentence and goes to `.pursestrings/ledger.jsonl`.
+
+With no credentials this runs end to end against the simulator (`KPASS_MODE=sim`, `SERV_MODE=mock`, and `npm run merchant:sim` with `--merchant http://localhost:8402`). Nothing real moves.
+
 ## Demo merchants
 
 `merchant/` is the shop side: four demo merchants (two competing data-bundle sellers, a ride-quote service and an airtime seller) selling over x402 on the Kite testnet. Each product is its own paid route built on [kite-x402-hono](https://github.com/BrKDDD/kite-x402-hono), priced in pieUSD and settled through the Pieverse facilitator.

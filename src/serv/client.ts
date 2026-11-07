@@ -41,13 +41,14 @@ export interface ServClient {
 }
 
 export class ServError extends Error {
-  constructor(
-    message: string,
-    readonly status: number | undefined,
-    readonly purpose: string,
-  ) {
+  readonly status: number | undefined;
+  readonly purpose: string;
+
+  constructor(message: string, status: number | undefined, purpose: string) {
     super(message);
     this.name = "ServError";
+    this.status = status;
+    this.purpose = purpose;
   }
 }
 
@@ -103,7 +104,11 @@ interface CacheEntry {
 }
 
 class FileCache {
-  constructor(private readonly dir: string) {}
+  private readonly dir: string;
+
+  constructor(dir: string) {
+    this.dir = dir;
+  }
 
   async get(key: string): Promise<CacheEntry | undefined> {
     try {

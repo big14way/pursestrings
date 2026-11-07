@@ -22,7 +22,11 @@ export type ApprovalOutcome = { state: "approved"; approved: SessionApproved } |
 const NON_ERROR_STATUSES = new Set(["success", "human_action_required", "pending"]);
 
 export class Passport {
-  constructor(readonly runner: KpassRunner) {}
+  readonly runner: KpassRunner;
+
+  constructor(runner: KpassRunner) {
+    this.runner = runner;
+  }
 
   get mode() {
     return this.runner.mode;

@@ -110,7 +110,11 @@ export function redact(value: unknown): unknown {
 
 /** Appends every kpass exchange to a JSONL file: the recorded fallback and the audit trail. */
 export class Transcript {
-  constructor(readonly path: string) {}
+  readonly path: string;
+
+  constructor(path: string) {
+    this.path = path;
+  }
 
   async record(result: KpassResult): Promise<void> {
     const line = JSON.stringify({

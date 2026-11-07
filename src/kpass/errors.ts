@@ -24,6 +24,7 @@ export const KNOWN_ERRORS: Record<string, ErrorInfo> = {
   merchant_not_allowed: { kind: "merchant", title: "Merchant not allowlisted by Passport", remedy: "Skip this merchant, or check it is listed in the Kite catalog." },
   payment_cap_exceeded: { kind: "policy", title: "Over the Passport system cap", remedy: "Choose a cheaper option." },
   payment_redirect_not_allowed: { kind: "merchant", title: "Merchant redirected during payment", remedy: "Use the merchant's final URL." },
+  merchant_request_failed: { kind: "merchant", title: "Merchant failed before settlement", remedy: "Nothing was charged; check the order details and try again." },
   no_payment_requirement: { kind: "merchant", title: "Merchant asked for no payment", remedy: "Check the HTTP method for this endpoint." },
   merchant_unsupported: { kind: "merchant", title: "Merchant payment scheme unsupported", remedy: "Skip this merchant." },
   insufficient_balance: { kind: "funds", title: "Wallet balance too low", remedy: "Fund the Passport wallet (testnet: kpass faucet drop)." },
@@ -43,15 +44,17 @@ export const KNOWN_ERRORS: Record<string, ErrorInfo> = {
 export class KpassError extends Error {
   readonly code: string;
   readonly info: ErrorInfo;
+  readonly envelope: KpassEnvelope;
+  readonly exitCode: number;
+  readonly command: string;
 
-  constructor(
-    readonly envelope: KpassEnvelope,
-    readonly exitCode: number,
-    readonly command: string,
-  ) {
+  constructor(envelope: KpassEnvelope, exitCode: number, command: string) {
     const code = envelope.error_code ?? (exitCode === 3 ? "not_authorized" : "unknown_error");
     super(envelope.error ?? envelope.hint ?? `kpass ${command} failed with exit code ${exitCode}`);
     this.name = "KpassError";
+    this.envelope = envelope;
+    this.exitCode = exitCode;
+    this.command = command;
     this.code = code;
     this.info = describeError(code);
   }
