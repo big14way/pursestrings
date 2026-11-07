@@ -88,7 +88,7 @@ export function expectOk<T extends KpassEnvelope>(result: KpassResult): T {
 export function createPassport(config: Config, simOptions: SimOptions = {}): Passport {
   const transcript = new Transcript(join(config.stateDir, "kpass-transcript.jsonl"));
   if (config.kpass.mode === "live" && config.kpass.bin) {
-    return new Passport(createLiveRunner({ bin: config.kpass.bin, timeoutMs: config.kpass.timeoutMs, transcript }));
+    return new Passport(createLiveRunner({ bin: config.kpass.bin, baseURL: config.kpass.baseURL, timeoutMs: config.kpass.timeoutMs, transcript }));
   }
   return new Passport(new SimKpass({ transcript, ...simOptions }));
 }

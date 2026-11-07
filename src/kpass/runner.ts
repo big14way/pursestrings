@@ -129,6 +129,8 @@ export class Transcript {
 
 export interface LiveRunnerOptions {
   bin: string;
+  /** Passport backend URL, e.g. https://passport.dev.gokite.ai. Omit for the kpass default. */
+  baseURL?: string;
   timeoutMs: number;
   transcript?: Transcript;
   exec?: ExecFn;
@@ -159,7 +161,8 @@ export function createLiveRunner(options: LiveRunnerOptions): KpassRunner {
     mode: "live",
     async run(args) {
       // Global flags go first: kpass 6.13 rejects `sandbox status --no-interactive` as an unknown command.
-      const fullArgs = wantsJson(args) ? ["--output", "json", "--no-interactive", ...args] : args;
+      const globals = ["--output", "json", "--no-interactive", ...(options.baseURL ? ["--base-url", options.baseURL] : [])];
+      const fullArgs = wantsJson(args) ? [...globals, ...args] : args;
       const started = now();
       const out = await exec(options.bin, fullArgs, { timeoutMs: options.timeoutMs });
       const result: KpassResult = {

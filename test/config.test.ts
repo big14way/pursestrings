@@ -33,6 +33,11 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ env: { KPASS_TIMEOUT_MS: "-1" }, resolveBin: none })).toThrow(/KPASS_TIMEOUT_MS/);
   });
 
+  it("reads the Passport backend URL", () => {
+    expect(loadConfig({ env: {}, resolveBin: none }).kpass.baseURL).toBeUndefined();
+    expect(loadConfig({ env: { KPASS_BASE_URL: " https://passport.dev.gokite.ai " }, resolveBin: none }).kpass.baseURL).toBe("https://passport.dev.gokite.ai");
+  });
+
   it("treats a blank key as absent", () => {
     expect(loadConfig({ env: { SERV_API_KEY: "  " }, resolveBin: none }).serv.mode).toBe("mock");
   });

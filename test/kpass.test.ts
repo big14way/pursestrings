@@ -66,6 +66,14 @@ describe("live runner", () => {
     expect(logged.envelope.token).toBe("[redacted]");
   });
 
+  it("points every JSON call at the configured backend", async () => {
+    const calls: string[][] = [];
+    const runner = createLiveRunner({ bin: "kpass", baseURL: "https://passport.dev.gokite.ai", timeoutMs: 1000, exec: async (_b, args) => (calls.push(args), { stdout: '{"status":"success"}', stderr: "", exitCode: 0 }) });
+    await runner.run(["wallet", "balance"]);
+    expect(calls[0]).toEqual(["--output", "json", "--no-interactive", "--base-url", "https://passport.dev.gokite.ai", "wallet", "balance"]);
+    expect(commandWords(calls[0] ?? [])).toEqual(["wallet", "balance"]);
+  });
+
   it("does not add JSON flags to --version", async () => {
     const calls: string[][] = [];
     const runner = createLiveRunner({ bin: "kpass", timeoutMs: 1000, exec: async (_b, args) => (calls.push(args), { stdout: "kpass 1.0", stderr: "", exitCode: 0 }) });

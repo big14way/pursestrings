@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findNetworks, formatReport, runDoctor, satisfiesNode } from "../src/doctor.js";
+import { findNetworks, formatReport, fundedChains, runDoctor, satisfiesNode } from "../src/doctor.js";
 import { Passport } from "../src/kpass/passport.js";
 import { createLiveRunner } from "../src/kpass/runner.js";
 import { SimKpass } from "../src/kpass/sim.js";
@@ -12,6 +12,14 @@ describe("findNetworks", () => {
   it("collects chain ids and CAIP-2 networks from nested replies", () => {
     const found = findNetworks({ balances: [{ network: "eip155:5042002" }, { chain_id: 2368 }], x402: { chain_id: "8453" } });
     expect([...found].sort()).toEqual(["eip155:2368", "eip155:5042002", "eip155:8453"]);
+  });
+});
+
+describe("fundedChains", () => {
+  it("lists only chains holding a balance", () => {
+    const balance = { assets: [{ asset: "USDC", chains: [{ amount: "0.000000", chain: "arc" }, { amount: "0.000000", chain: "base" }] }, { asset: "pieUSD", chains: [{ amount: "5.000000000000000000", chain: "kite" }] }] };
+    expect(fundedChains(balance)).toEqual(["kite (pieUSD 5)"]);
+    expect(fundedChains({})).toEqual([]);
   });
 });
 

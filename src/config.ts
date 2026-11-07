@@ -20,6 +20,8 @@ export interface Config {
     mode: KpassMode;
     /** Resolved path to the kpass binary, if one was found. */
     bin: string | undefined;
+    /** Passport backend; kpass has no env var for it, so it is passed as --base-url. */
+    baseURL: string | undefined;
     timeoutMs: number;
   };
   /** Local working directory for caches, probes and transcripts. Never committed. */
@@ -97,7 +99,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       fastModel: env.SERV_FAST_MODEL?.trim() || DEFAULT_FAST_MODEL,
       cache: env.SERV_CACHE !== "0",
     },
-    kpass: { mode: kpassMode, bin, timeoutMs },
+    kpass: { mode: kpassMode, bin, baseURL: env.KPASS_BASE_URL?.trim() || undefined, timeoutMs },
     stateDir: resolve(cwd, env.PURSESTRINGS_STATE_DIR?.trim() || ".pursestrings"),
   };
 }

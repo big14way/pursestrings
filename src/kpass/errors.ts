@@ -20,7 +20,7 @@ export const KNOWN_ERRORS: Record<string, ErrorInfo> = {
   separate_session_used_up: { kind: "policy", title: "Session budget used up", remedy: "Approve a new session, or stop here." },
   session_endpoint_forbidden: { kind: "policy", title: "Endpoint outside the approved scope", remedy: "Approve a session that includes this merchant, or skip it." },
   session_asset_forbidden: { kind: "policy", title: "Asset not allowed by the session", remedy: "Approve a session that allows this asset, or skip it." },
-  payment_target_forbidden: { kind: "policy", title: "Payment target not allowed", remedy: "Skip this merchant." },
+  payment_target_forbidden: { kind: "merchant", title: "Merchant not in Kite's payable catalog", remedy: "Skip this merchant; Passport only pays hosts listed in the Kite catalog (ksearch service list) or allowlisted for the account." },
   merchant_not_allowed: { kind: "merchant", title: "Merchant not allowlisted by Passport", remedy: "Skip this merchant, or check it is listed in the Kite catalog." },
   payment_cap_exceeded: { kind: "policy", title: "Over the Passport system cap", remedy: "Choose a cheaper option." },
   payment_redirect_not_allowed: { kind: "merchant", title: "Merchant redirected during payment", remedy: "Use the merchant's final URL." },

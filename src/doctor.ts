@@ -61,6 +61,19 @@ export function findNetworks(value: unknown, found = new Set<string>()): Set<str
   return found;
 }
 
+/** Chains holding a non-zero balance in a `kpass wallet balance` reply, e.g. "kite (pieUSD 5)". */
+export function fundedChains(envelope: unknown): string[] {
+  const assets = (envelope as { assets?: Array<{ asset?: string; chains?: Array<{ chain?: string; amount?: string }> }> }).assets ?? [];
+  const out: string[] = [];
+  for (const { asset, chains } of assets) {
+    for (const { chain, amount } of chains ?? []) {
+      const value = Number(amount);
+      if (chain && value > 0) out.push(`${chain} (${asset ?? "?"} ${value})`);
+    }
+  }
+  return out;
+}
+
 export function satisfiesNode(version: string, major = 20, minor = 12): boolean {
   const [maj = 0, min = 0] = version.replace(/^v/, "").split(".").map(Number);
   return maj > major || (maj === major && min >= minor);
@@ -142,7 +155,7 @@ export async function runDoctor(deps: DoctorDeps, options: DoctorOptions = {}): 
 
   // Kite Passport
   if (passport.mode === "live") {
-    add({ id: "kpass-bin", label: "kpass CLI", state: "ok", detail: config.kpass.bin ?? "on PATH" });
+    add({ id: "kpass-bin", label: "kpass CLI", state: "ok", detail: `${config.kpass.bin ?? "on PATH"}, backend ${config.kpass.baseURL ?? "kpass default (production)"}` });
     const version = await passport.probe(["--version"]);
     add({ id: "kpass-version", label: "kpass version", state: version.exitCode === 0 ? "ok" : "fail", detail: String(version.envelope.text ?? version.stderr ?? "").trim().slice(0, 80) });
   } else {
@@ -155,7 +168,7 @@ export async function runDoctor(deps: DoctorDeps, options: DoctorOptions = {}): 
     ["kpass-sandbox", "Passport sandbox", ["sandbox", "status"]],
     ["kpass-wallet", "Passport wallet", ["wallet", "balance"]],
   ];
-  const walletNetworks = new Set<string>();
+  let funded: string[] = [];
   for (const [id, label, args] of probes) {
     const result = await passport.probe(args);
     if (passport.mode === "live") await saveProbe(id, { args: result.args, exitCode: result.exitCode, envelope: result.envelope, stderr: result.stderr });
@@ -163,7 +176,7 @@ export async function runDoctor(deps: DoctorDeps, options: DoctorOptions = {}): 
     const summary = ok
       ? String(result.envelope.hint ?? result.envelope.email ?? result.envelope.text ?? "ok")
       : `${result.envelope.error_code ?? `exit ${result.exitCode}`}: ${String(result.envelope.error ?? result.stderr).trim()}`;
-    if (id === "kpass-wallet" && ok && passport.mode === "live") findNetworks(result.envelope, walletNetworks);
+    if (id === "kpass-wallet" && ok && passport.mode === "live") funded = fundedChains(result.envelope);
     const state: CheckState = ok ? (passport.mode === "live" ? "ok" : "warn") : id === "kpass-sandbox" ? "warn" : "fail";
     add({ id, label, state, detail: `${passport.mode === "sim" ? "[simulator] " : ""}${summary.slice(0, 140)}` });
   }
@@ -172,8 +185,7 @@ export async function runDoctor(deps: DoctorDeps, options: DoctorOptions = {}): 
   if (settled.length > 0) {
     add({ id: "settlement", label: "Settlement network", state: "ok", detail: `live paid calls settled on ${settled.join(", ")}`, data: settled });
   } else {
-    const seen = [...walletNetworks];
-    add({ id: "settlement", label: "Settlement network", state: "warn", detail: `unconfirmed: no live paid call recorded yet${seen.length ? `; wallet reports ${seen.join(", ")}` : ""}`, data: seen });
+    add({ id: "settlement", label: "Settlement network", state: "warn", detail: `unconfirmed: no live paid call recorded yet${funded.length ? `; wallet funded on ${funded.join(", ")}` : "; wallet is empty"}`, data: funded });
   }
 
   // Kite chain and facilitator
