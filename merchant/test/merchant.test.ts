@@ -127,6 +127,22 @@ describe("paid purchases", () => {
   });
 });
 
+describe("rideQuote", () => {
+  it("always gives a sane ETA and fare, whatever the hash", () => {
+    const places = ["Yaba", "Victoria Island", "Ikeja", "Lekki", "Surulere", "Ajah", "Ikoyi", "Maryland"];
+    for (const from of places) {
+      for (const to of places) {
+        const q = rideQuote(from, to);
+        expect(q.etaMinutes).toBeGreaterThanOrEqual(4);
+        expect(q.etaMinutes).toBeLessThanOrEqual(15);
+        expect(q.distanceKm).toBeGreaterThanOrEqual(3);
+        expect(q.fareNgn).toBe(500 + q.distanceKm * 180);
+      }
+    }
+    expect(rideQuote("Yaba", "Victoria Island").etaMinutes).toBeGreaterThanOrEqual(4);
+  });
+});
+
 describe("discovery", () => {
   it("lists every shop and product with absolute paid URLs", async () => {
     const { app } = setup();

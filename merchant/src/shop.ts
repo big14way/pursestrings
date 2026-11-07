@@ -18,7 +18,8 @@ function digest(text: string): number {
 export function rideQuote(from: string, to: string) {
   const h = digest(`${from.trim().toLowerCase()}|${to.trim().toLowerCase()}`);
   const distanceKm = 3 + (h % 23);
-  return { from, to, distanceKm, fareNgn: 500 + distanceKm * 180, etaMinutes: 4 + ((h >> 8) % 12), validForMinutes: 10 };
+  // >>> keeps the shift unsigned; >> turns hashes at or above 2^31 negative.
+  return { from, to, distanceKm, fareNgn: 500 + distanceKm * 180, etaMinutes: 4 + ((h >>> 8) % 12), validForMinutes: 10 };
 }
 
 export interface ShopBackendOptions {
