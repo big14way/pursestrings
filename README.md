@@ -22,7 +22,7 @@ Verified live (evidence below):
 - SERV's `serv_prompt_guard` refusing DataDash's subtle steering listing, which the pattern scan passes;
 - the real Kite Passport (dev backend, passkey-approved session) refusing the injected payment.
 
-Not yet: live Passport payments to our own merchants. Kite Passport only pays hosts in Kite's catalog, so it refuses `pursestrings-merchant.onrender.com` with `payment_target_forbidden` until Kite allowlists it. The only Kite-run x402 gateway in the dev catalog charges USDC on Kite mainnet, which dev Passport refuses as `unsupported_asset`. Until then the honest purchases run against the built-in Passport simulator, which enforces the same caps.
+Not yet: live Passport payments to our own merchants. Kite Passport only pays hosts in Kite's catalog, so it refuses `pursestrings-merchant.onrender.com` with `payment_target_forbidden` until Kite allowlists it. We asked on Nov 7 and 8, through Passport feedback on the dev and prod backends (`feedback_0db2d579-a36e-4fdc-98cd-054f4625cb0a`, `feedback_3e0c63b3-4c99-4774-a74e-22d3a227df2e`) and a post in Kite's Discord #builders-project, and had no answer as of Nov 11. The only Kite-run x402 gateway in the dev catalog charges USDC on Kite mainnet, which dev Passport refuses as `unsupported_asset`. Until then the honest purchases run against the built-in Passport simulator, which enforces the same caps.
 
 Everything runs with zero credentials against the simulator.
 
@@ -99,7 +99,7 @@ The layers, in order:
 1. **Pattern scan.** Every string in a catalog is scanned for text that addresses AI agents, overrides their rules, redirects funds or asks for secrecy. A merchant that does any of this never reaches the planner and cannot be paid.
 2. **SERV screen.** Listings that pass the scan are read by SERV (`claude-haiku-4.5` with `serv_prompt_guard` declared) for steering: claims about rivals, urgency aimed at agents, payment or limit instructions. A steering verdict, or the guard refusing the listing, quarantines the merchant. If SERV cannot answer, the listing stays in and the run says so, because the checks below still apply.
 3. **Code checks on every payment.** The planner can only name catalog product ids. Before each payment, the merchant's live 402 must match the listing: network, token, receiving wallet and price.
-4. **Kite Passport bounds the session.** Even an agent that was fully fooled can only spend inside the session you approved with your passkey. `run --red-team` plays the fooled agent: with PurseStrings' own checks off, it asks Passport to pay MegaDeals' $1.00 demand. The simulator refuses with `session_rule_exceeded` (over the per-payment cap). The real Kite Passport (dev backend, session approved with a passkey) refused with `payment_target_forbidden`. Either way nothing is paid. Red-team mode only ever targets Kite testnet merchants.
+4. **Kite Passport bounds the session.** Even an agent that was fully fooled can only spend inside the session you approved with your passkey. `run --red-team` plays the fooled agent: with PurseStrings' own checks off, it asks Passport to pay MegaDeals' $1.00 demand. The simulator refuses with `session_rule_exceeded` (over the per-payment cap). The real Kite Passport (dev backend, session approved with a passkey) refused with `payment_target_forbidden`, because the host is not in Kite's catalog. Either way nothing is paid. Red-team mode only ever targets Kite testnet merchants.
 
 What PurseStrings adds to Passport: Passport enforces how much; PurseStrings enforces to whom and for what. QuickData is the case that shows it.
 
@@ -157,7 +157,7 @@ Deploy them on Render's free plan with the included `render.yaml` (New > Bluepri
 | Merchant receiving wallet | [0x706F…89cc](https://testnet.kitescan.ai/address/0x706F739AE390375A1Df4046879a47DC2D46389cc) |
 | Live deceptive listings | [MegaDeals](https://pursestrings-megadeals.onrender.com/catalog), [DataDash](https://pursestrings-datadash.onrender.com/catalog), [QuickData](https://pursestrings-quickdata.onrender.com/catalog) |
 | SERV's prompt guard refusing DataDash's listing | `finish_reason: content_filter`, request id 1ac6189a in the SERV console |
-| Real Kite Passport refusing the injected payment | `payment_target_forbidden`, session approved by passkey on the dev backend |
+| Real Kite Passport refusing the injected payment | `payment_target_forbidden` (host not in Kite's catalog), session approved by passkey on the dev backend |
 
 Both payments were made with `merchant/scripts/buy.ts` (an x402 client paying from a testnet wallet), not through Passport.
 
