@@ -31,7 +31,7 @@ Everything runs with zero credentials against the simulator.
 Requires Node.js 20.12 or later. One command, no clone:
 
 ```bash
-npx github:big14way/pursestrings run --demo     # the honest shops and all three attacks, red team on
+npx github:big14way/pursestrings run --demo     # the honest shops and all three attacks, red team on, Passport simulator
 npx github:big14way/pursestrings run "Get me the cheapest 1GB data bundle under \$0.50 for +2348012345678 and a ride quote from Yaba to Victoria Island"
 npx github:big14way/pursestrings doctor
 ```

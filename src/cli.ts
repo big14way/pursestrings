@@ -120,7 +120,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   loadDotEnv();
-  const config = loadConfig();
+  const config = loadConfig({ kpassDefault: command === "run" && values.demo ? "sim" : "auto" });
 
   switch (command) {
     case "doctor": {
@@ -142,6 +142,9 @@ async function main(argv: string[]): Promise<number> {
       const passport = createPassport(config, { preflight: createMerchantPreflight() });
       const backend = passport.mode === "live" && config.kpass.baseURL ? ` (${config.kpass.baseURL})` : passport.mode === "sim" ? " (simulator, no funds move)" : "";
       console.log(`SERV: ${config.serv.mode}   Passport: ${passport.mode}${backend}   Budget: $${budgetUsd}`);
+      if (values.demo && passport.mode === "sim" && config.kpass.bin && !process.env.KPASS_MODE) {
+        console.log("kpass is installed, but the demo uses the simulator. Set KPASS_MODE=live to use your own Passport session (Kite Passport refuses these merchants until Kite allowlists them).");
+      }
       const summary = await runTask(
         { config, serv: servClient(config), passport, ledger },
         {

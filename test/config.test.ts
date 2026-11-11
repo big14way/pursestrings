@@ -26,6 +26,14 @@ describe("loadConfig", () => {
     expect(config.kpass.mode).toBe("sim");
   });
 
+  it("lets the demo default to the simulator even when kpass is installed", () => {
+    const kpass = () => "/bin/kpass";
+    expect(loadConfig({ env: {}, resolveBin: kpass, kpassDefault: "sim" }).kpass.mode).toBe("sim");
+    expect(loadConfig({ env: { KPASS_MODE: "auto" }, resolveBin: kpass, kpassDefault: "sim" }).kpass.mode).toBe("live");
+    expect(loadConfig({ env: { KPASS_MODE: "live" }, resolveBin: kpass, kpassDefault: "sim" }).kpass.mode).toBe("live");
+    expect(loadConfig({ env: {}, resolveBin: kpass }).kpass.mode).toBe("live");
+  });
+
   it("refuses live modes that cannot work", () => {
     expect(() => loadConfig({ env: { SERV_MODE: "live" }, resolveBin: none })).toThrow(/SERV_API_KEY/);
     expect(() => loadConfig({ env: { KPASS_MODE: "live" }, resolveBin: none })).toThrow(/kpass/);

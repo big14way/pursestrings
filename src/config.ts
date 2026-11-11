@@ -69,6 +69,8 @@ export interface LoadConfigOptions {
   env?: Env;
   cwd?: string;
   resolveBin?: (name: string, env: Env) => string | undefined;
+  /** Passport mode when KPASS_MODE is unset. `run --demo` passes "sim" so the demo never needs a login. */
+  kpassDefault?: "auto" | "sim";
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): Config {
@@ -82,7 +84,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   const servMode: ServMode = servPref === "mock" ? "mock" : servPref === "live" ? "live" : apiKey ? "live" : "mock";
 
   const bin = resolveBin("kpass", env);
-  const kpassPref = pick(env.KPASS_MODE, ["auto", "live", "sim"] as const, "auto", "KPASS_MODE");
+  const kpassPref = pick(env.KPASS_MODE, ["auto", "live", "sim"] as const, options.kpassDefault ?? "auto", "KPASS_MODE");
   if (kpassPref === "live" && !bin) throw new Error("KPASS_MODE=live but no kpass binary was found (install: curl -fsSL https://cli.gokite.ai/install.sh | bash)");
   const kpassMode: KpassMode = kpassPref === "sim" ? "sim" : kpassPref === "live" ? "live" : bin ? "live" : "sim";
 
